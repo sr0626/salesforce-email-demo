@@ -74,3 +74,9 @@ variable "inbound_object_prefix" {
   description = "S3 key prefix SES writes raw email under; the Lambda reads <prefix><messageId> to build the body preview + link."
   default     = "inbound/"
 }
+
+variable "auto_create_case" {
+  type        = bool
+  description = "When an email has no Case # and no prior owner, create a new Salesforce Case (Email-to-Case style) and route to its owner."
+  default     = true
+}

@@ -26,8 +26,8 @@ dependency on any other project.
 7. [04-verification-plan.md](04-verification-plan.md) — end-to-end test
    checklist proving Scenario 1 (Salesforce case routing) and Scenario 2
    (shared mailbox ownership continuity) actually work.
-8. [08-implementation-status.md](08-implementation-status.md) — **living source
-   of truth**: scenario-by-scenario status, open gaps, and bonus features.
+8. [08-implementation-status.md](08-implementation-status.md) — scenario-by-scenario
+   status, open gaps, and bonus features.
 
 **Scope of this round:** Scenario 1 + Scenario 2 only (from the 8 demo
 scenarios). Scenarios 3/6 need no new build (reuse this round's queue/attribute

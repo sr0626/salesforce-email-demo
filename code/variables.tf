@@ -81,6 +81,12 @@ variable "case_id_regex" {
   default     = "Case\\s*#?(\\d{5,10})"
 }
 
+variable "auto_create_case" {
+  type        = bool
+  description = "When an email has no Case # and no prior owner, create a new Salesforce Case and route to its owner."
+  default     = true
+}
+
 ########################################
 # Connect
 ########################################

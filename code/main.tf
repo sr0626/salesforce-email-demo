@@ -85,6 +85,7 @@ module "email_router" {
 
   shared_mailboxes = var.shared_mailboxes
   case_id_regex    = var.case_id_regex
+  auto_create_case = var.auto_create_case
 }
 
 # No SES module — SES (domain identity, DKIM, receipt rule set/rule, activation,

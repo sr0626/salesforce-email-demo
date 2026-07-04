@@ -48,6 +48,8 @@ SHARED_MAILBOXES = set(
 SF_API_VERSION = os.environ.get("SF_API_VERSION", "v60.0")
 # {salesforceOwnerId: contactFlowArn} — routes each Task to that owner's agent.
 OWNER_FLOW_MAP = json.loads(os.environ.get("OWNER_FLOW_MAP", "{}"))
+# When an email has no Case # and no prior owner, create a Salesforce Case.
+AUTO_CREATE_CASE = os.environ.get("AUTO_CREATE_CASE", "true").lower() == "true"
 
 INBOUND_BUCKET = os.environ.get("INBOUND_BUCKET", "")
 INBOUND_PREFIX = os.environ.get("INBOUND_PREFIX", "inbound/")
@@ -82,13 +84,25 @@ def handler(event, context):
         case_number = m.group(1) if m else None
 
         if case_number:
+            # Scenario 1: subject carries a Case # → live owner lookup.
             owner_id, owner_name = _lookup_salesforce_case_owner(case_number)
             outcome = "resolved" if owner_id else "unassigned"
             if owner_id:
                 _upsert_ownership(mailbox, from_addr, owner_id, owner_name, case_number)
         else:
+            # Scenario 2: no Case # → remembered owner for this customer.
             owner_id, owner_name = _lookup_ownership_fallback(mailbox, from_addr)
-            outcome = "fallback" if owner_id else "unassigned"
+            if owner_id:
+                outcome = "fallback"
+            elif AUTO_CREATE_CASE:
+                # New inquiry: no case and no history → create a Salesforce Case,
+                # then route to its owner (Email-to-Case style).
+                case_number, owner_id, owner_name = _create_salesforce_case(subject, from_addr)
+                outcome = "created" if case_number else "unassigned"
+                if owner_id:
+                    _upsert_ownership(mailbox, from_addr, owner_id, owner_name, case_number)
+            else:
+                outcome = "unassigned"
 
         is_shared = mailbox in SHARED_MAILBOXES
         body_preview, raw_url = _fetch_body_and_link(message_id)
@@ -157,6 +171,44 @@ def _lookup_salesforce_case_owner(case_number):
         return None, None
 
 
+def _create_salesforce_case(subject, from_addr):
+    """Create a new Salesforce Case for a new inquiry, then return
+    (caseNumber, ownerId, ownerName). Best-effort — returns Nones on failure."""
+    try:
+        token, instance_url = _get_salesforce_token()
+        payload = json.dumps({
+            "Subject": subject or "(no subject)",
+            "Description": f"Auto-created from email to shared mailbox. From: {from_addr}",
+            "SuppliedEmail": from_addr,
+            "Origin": "Email",
+        }).encode()
+        req = urllib.request.Request(
+            f"{instance_url}/services/data/{SF_API_VERSION}/sobjects/Case",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            new_id = json.loads(r.read())["id"]
+        # Fetch the new case's number + owner (owner defaults to the run-as user
+        # unless Salesforce assignment rules are configured).
+        soql = f"SELECT CaseNumber, OwnerId, Owner.Name FROM Case WHERE Id = '{new_id}'"
+        url = f"{instance_url}/services/data/{SF_API_VERSION}/query?q=" + urllib.parse.quote(soql)
+        req2 = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+        with urllib.request.urlopen(req2, timeout=10) as r:
+            recs = json.loads(r.read()).get("records", [])
+        if not recs:
+            return None, None, None
+        rec = recs[0]
+        return rec.get("CaseNumber"), rec.get("OwnerId"), (rec.get("Owner") or {}).get("Name")
+    except Exception:
+        logger.exception("Salesforce case creation failed")
+        return None, None, None
+
+
 def _upsert_ownership(mailbox, customer_email, owner_id, owner_name, case_number):
     OWNERSHIP_TABLE.put_item(
         Item={
@@ -223,14 +275,11 @@ def _fetch_body_and_link(message_id):
     key = INBOUND_PREFIX + message_id
     try:
         raw = s3.get_object(Bucket=INBOUND_BUCKET, Key=key)["Body"].read()
-        plain, html = _extract_bodies(email.message_from_bytes(raw))
+        msg = email.message_from_bytes(raw)
+        plain, html = _extract_bodies(msg)
         preview = (plain or _strip_tags(html) or "").strip()[:BODY_PREVIEW_CHARS]
 
-        view_html = html or (
-            "<pre style=\"white-space:pre-wrap;font-family:sans-serif\">"
-            + _html_escape(plain or "(no text body)")
-            + "</pre>"
-        )
+        view_html = _render_email_html(msg, html, plain)
         view_key = RENDERED_PREFIX + message_id + ".html"
         s3.put_object(
             Bucket=INBOUND_BUCKET,
@@ -247,6 +296,29 @@ def _fetch_body_and_link(message_id):
     except Exception:
         logger.exception("Could not fetch/parse body for %s", message_id)
         return "", None
+
+
+def _render_email_html(msg, html, plain):
+    """Wrap the email body with a From/To/Date/Subject header block so the
+    rendered view reads like a real email."""
+    rows = "".join(
+        f"<div><b>{label}:</b> {_html_escape(msg.get(name, '') or '')}</div>"
+        for label, name in (("From", "From"), ("To", "To"), ("Date", "Date"), ("Subject", "Subject"))
+    )
+    header = (
+        "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:14px;"
+        "background:#f4f6f8;border:1px solid #d8dde3;border-radius:6px;"
+        "padding:12px 16px;margin-bottom:16px;color:#16325c\">" + rows + "</div>"
+    )
+    body = html or (
+        "<pre style=\"white-space:pre-wrap;font-family:Arial,Helvetica,sans-serif\">"
+        + _html_escape(plain or "(no text body)")
+        + "</pre>"
+    )
+    return (
+        "<div style=\"max-width:820px;margin:16px auto;padding:0 8px\">"
+        + header + body + "</div>"
+    )
 
 
 def _extract_bodies(msg):

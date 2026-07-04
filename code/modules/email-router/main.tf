@@ -104,6 +104,7 @@ resource "aws_lambda_function" "router" {
       OWNER_FLOW_MAP      = jsonencode(var.owner_flow_map)
       SHARED_MAILBOXES    = var.shared_mailboxes
       CASE_ID_REGEX       = var.case_id_regex
+      AUTO_CREATE_CASE    = var.auto_create_case ? "true" : "false"
     }
   }
 }
