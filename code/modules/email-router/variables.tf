@@ -1,0 +1,64 @@
+variable "instance_alias" {
+  type        = string
+  description = "Resource-name prefix (the Connect instance alias)."
+}
+
+variable "lambda_function_name" {
+  type        = string
+  description = "Name of the router Lambda function."
+}
+
+variable "lambda_runtime" {
+  type        = string
+  description = "Lambda runtime."
+  default     = "python3.12"
+}
+
+variable "lambda_timeout" {
+  type        = number
+  description = "Lambda timeout in seconds."
+  default     = 30
+}
+
+variable "lambda_memory_size" {
+  type        = number
+  description = "Lambda memory (MB)."
+  default     = 256
+}
+
+variable "kms_key_arn" {
+  type        = string
+  description = "KMS key ARN to encrypt Lambda environment variables and that the role may use for S3/DynamoDB/Secrets decryption. Empty string uses AWS-owned keys and omits the KMS IAM statement."
+  default     = ""
+}
+
+# --- wiring from other modules ---
+
+variable "inbound_bucket_name" { type = string }
+variable "inbound_bucket_arn" { type = string }
+variable "ownership_table_name" { type = string }
+variable "ownership_table_arn" { type = string }
+variable "routing_log_table_name" { type = string }
+variable "routing_log_table_arn" { type = string }
+variable "salesforce_secret_arn" { type = string }
+variable "connect_instance_id" { type = string }
+variable "connect_instance_arn" { type = string }
+variable "contact_flow_arn" { type = string }
+
+# --- behavior ---
+
+variable "salesforce_api_version" {
+  type        = string
+  description = "Salesforce REST API version to query."
+  default     = "v60.0"
+}
+
+variable "shared_mailboxes" {
+  type        = string
+  description = "Comma-separated shared mailbox addresses."
+}
+
+variable "case_id_regex" {
+  type        = string
+  description = "Regex to extract the Case Number from the subject (group 1)."
+}

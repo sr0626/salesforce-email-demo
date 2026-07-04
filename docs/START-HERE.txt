@@ -1,0 +1,8 @@
+Paste this into a fresh Claude Code session (VS Code), in a new empty repo:
+
+Read all the docs in /Users/sateesh/D-Drive/MyProjects/aws-poc/manual/email-demo/docs
+starting with README.md, in the order it specifies. Then implement the plan in
+02-implementation-spec.md: create a new standalone Terraform repo here
+(main.tf + variables.tf + outputs.tf + modules/ + scripts/) exactly as
+specified in that doc. Follow the conventions described in the doc. Do NOT run
+terraform apply or any AWS CLI command — write the code only and let me run it.

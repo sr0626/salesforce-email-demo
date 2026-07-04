@@ -1,0 +1,21 @@
+# Root .gitignore for the whole project (code/.gitignore also applies under code/)
+
+.DS_Store
+
+# Terraform — never commit state (holds secrets) or local var files
+**/.terraform/
+**/.terraform.lock.hcl
+**/*.tfstate
+**/*.tfstate.*
+**/terraform.tfvars
+**/*.auto.tfvars
+
+# Lambda build artifact
+**/build/
+
+# Python
+**/__pycache__/
+*.pyc
+
+# Scratch
+*.log

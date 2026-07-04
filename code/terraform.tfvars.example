@@ -1,0 +1,41 @@
+# Copy to terraform.tfvars and adjust as needed. All values have defaults in
+# variables.tf, so terraform.tfvars is optional for the default POC setup.
+#
+# NEVER put real Salesforce credentials here. The salesforce-secret module seeds
+# a placeholder; set the real client_id/client_secret post-apply via:
+#   aws secretsmanager put-secret-value --secret-id <alias>-salesforce-credentials ...
+# (see docs/06-setup-salesforce-dev-org.md)
+
+region         = "us-west-2"
+instance_alias = "salesforce-email-demo"
+project_name   = "salesforce-email-demo"
+
+# Existing customer-managed KMS key used for S3, DynamoDB, Secrets Manager, and
+# Lambda env encryption. Set to "" to fall back to SSE-S3 / AWS-managed keys.
+# NOTE: its key policy must also allow ses.amazonaws.com — see kms-key-policy/.
+kms_key_arn = "arn:aws:kms:us-west-2:044336301301:key/71cf9f1f-81c0-4cc4-8534-6682359b842e"
+
+ses_domain       = "ccaas.evolvity.com"
+shared_mailboxes = "ordersuccess@ccaas.evolvity.com"
+
+# This org requires its My Domain URL for the Client Credentials flow
+# (login.salesforce.com does not work here).
+salesforce_login_url   = "https://orgfarm-ad53113bc6-dev-ed.develop.my.salesforce.com"
+salesforce_api_version = "v60.0"
+
+# Matches subjects like "Case #00001028" or "Case 00001028"; group 1 is the number.
+case_id_regex = "Case\\s*#?(\\d{5,10})"
+
+lambda_function_name = "email-case-router-lambda"
+
+# --- optional tunables (defaults shown) ---
+# connect_queue_name           = "Email-Case-Queue"
+# connect_queue_max_contacts   = 25
+# connect_routing_profile_name = "Email-Routing-Profile"
+# connect_task_concurrency     = 5
+# connect_hours_timezone       = "UTC"
+# connect_contact_flow_name    = "Email-Case-Routing"
+# lambda_runtime               = "python3.12"
+# lambda_timeout               = 30
+# lambda_memory_size           = 256
+# extra_tags                   = { Owner = "sateesh" }
