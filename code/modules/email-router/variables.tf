@@ -68,3 +68,9 @@ variable "owner_flow_map" {
   description = "Map of Salesforce OwnerId -> owner-specific contact flow ARN. The Lambda routes a Task via the matching owner's flow; unmapped owners fall back to contact_flow_arn."
   default     = {}
 }
+
+variable "inbound_object_prefix" {
+  type        = string
+  description = "S3 key prefix SES writes raw email under; the Lambda reads <prefix><messageId> to build the body preview + link."
+  default     = "inbound/"
+}

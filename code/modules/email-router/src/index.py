@@ -8,16 +8,19 @@ mailbox(es). For each message:
                   OAuth) and upsert the ownership record.
      If absent -> fall back to the last-known owner for (mailbox, customer) in
                   DynamoDB (shared-mailbox ownership continuity).
-  3. Start an Amazon Connect Task carrying caseId/owner attributes.
+  3. Start an Amazon Connect Task carrying caseId/owner attributes, a decoded
+     body preview, and a (presigned) link to the raw email in S3.
   4. Write an append-only audit-log row.
 
-SES's event already includes parsed commonHeaders (subject/from/to), so we don't
-need to fetch raw MIME from S3 for routing. Reading the S3 object would only be
-needed for the email body (a future "show preview to agent" feature).
+SES's event includes parsed commonHeaders (subject/from/to) used for routing.
+The full body/thread is read from the raw MIME object SES stored in S3 (best
+effort) to give the agent a preview + a link.
 """
 
 import boto3
+import email
 import json
+from botocore.config import Config
 import logging
 import os
 import re
@@ -33,6 +36,8 @@ logger.setLevel(logging.INFO)
 ddb = boto3.resource("dynamodb")
 secrets = boto3.client("secretsmanager")
 connect = boto3.client("connect")
+# SigV4 is required to presign GETs for KMS-SSE objects (SigV2 is rejected).
+s3 = boto3.client("s3", config=Config(signature_version="s3v4"))
 
 OWNERSHIP_TABLE = ddb.Table(os.environ["OWNERSHIP_TABLE"])
 LOG_TABLE = ddb.Table(os.environ["ROUTING_LOG_TABLE"])
@@ -43,6 +48,12 @@ SHARED_MAILBOXES = set(
 SF_API_VERSION = os.environ.get("SF_API_VERSION", "v60.0")
 # {salesforceOwnerId: contactFlowArn} — routes each Task to that owner's agent.
 OWNER_FLOW_MAP = json.loads(os.environ.get("OWNER_FLOW_MAP", "{}"))
+
+INBOUND_BUCKET = os.environ.get("INBOUND_BUCKET", "")
+INBOUND_PREFIX = os.environ.get("INBOUND_PREFIX", "inbound/")
+RENDERED_PREFIX = os.environ.get("RENDERED_PREFIX", "rendered/")
+BODY_PREVIEW_CHARS = int(os.environ.get("BODY_PREVIEW_CHARS", "2000"))
+RAW_EMAIL_URL_TTL = int(os.environ.get("RAW_EMAIL_URL_TTL", "43200"))  # 12h
 
 # reused across warm invocations to avoid an OAuth round-trip per email
 _sf_token_cache = {}  # {"access_token":..., "instance_url":..., "expires_at": epoch}
@@ -80,8 +91,10 @@ def handler(event, context):
             outcome = "fallback" if owner_id else "unassigned"
 
         is_shared = mailbox in SHARED_MAILBOXES
+        body_preview, raw_url = _fetch_body_and_link(message_id)
         contact_id = _start_connect_task(
-            subject, mailbox, from_addr, case_number, owner_id, owner_name, is_shared
+            subject, mailbox, from_addr, case_number, owner_id, owner_name,
+            is_shared, body_preview, raw_url,
         )
         _write_audit_log(
             message_id, mailbox, from_addr, subject, case_number,
@@ -165,26 +178,103 @@ def _lookup_ownership_fallback(mailbox, customer_email):
 
 
 def _start_connect_task(
-    subject, mailbox, from_addr, case_number, owner_id, owner_name, is_shared
+    subject, mailbox, from_addr, case_number, owner_id, owner_name, is_shared,
+    body_preview="", raw_url=None,
 ):
     # Route to the owner's dedicated flow (-> owner's queue/agent); if the owner
     # isn't mapped (or is unassigned), fall back to the shared flow/queue.
     flow_arn = OWNER_FLOW_MAP.get(owner_id or "", os.environ["TASK_FLOW_ARN"])
-    resp = connect.start_task_contact(
+
+    attributes = {
+        "caseId": case_number or "",
+        "ownerId": owner_id or "UNASSIGNED",
+        "ownerName": owner_name or "Unassigned",
+        "mailbox": mailbox,
+        "fromAddress": from_addr,
+        "isSharedMailbox": "true" if is_shared else "false",
+    }
+    if body_preview:
+        attributes["bodyPreview"] = body_preview
+
+    kwargs = dict(
         InstanceId=os.environ["CONNECT_INSTANCE_ID"],
         ContactFlowId=flow_arn,
         Name=f"Email: {subject[:50]}",
         Description=f"From {from_addr} to {mailbox}",
-        Attributes={
-            "caseId": case_number or "",
-            "ownerId": owner_id or "UNASSIGNED",
-            "ownerName": owner_name or "Unassigned",
-            "mailbox": mailbox,
-            "fromAddress": from_addr,
-            "isSharedMailbox": "true" if is_shared else "false",
-        },
+        Attributes=attributes,
     )
+    # A clickable link to a browser-renderable view of the email in the Task.
+    if raw_url:
+        kwargs["References"] = {
+            "Email": {"Value": raw_url, "Type": "URL"}
+        }
+
+    resp = connect.start_task_contact(**kwargs)
     return resp["ContactId"]
+
+
+def _fetch_body_and_link(message_id):
+    """Read the raw MIME from S3; return (decoded text preview, presigned URL to a
+    browser-renderable HTML view we write to S3). The raw .eml isn't readable in a
+    browser, so we render the HTML (or wrap the text) into its own object and link
+    to that. Best-effort — never fails the routing."""
+    if not INBOUND_BUCKET:
+        return "", None
+    key = INBOUND_PREFIX + message_id
+    try:
+        raw = s3.get_object(Bucket=INBOUND_BUCKET, Key=key)["Body"].read()
+        plain, html = _extract_bodies(email.message_from_bytes(raw))
+        preview = (plain or _strip_tags(html) or "").strip()[:BODY_PREVIEW_CHARS]
+
+        view_html = html or (
+            "<pre style=\"white-space:pre-wrap;font-family:sans-serif\">"
+            + _html_escape(plain or "(no text body)")
+            + "</pre>"
+        )
+        view_key = RENDERED_PREFIX + message_id + ".html"
+        s3.put_object(
+            Bucket=INBOUND_BUCKET,
+            Key=view_key,
+            Body=view_html.encode("utf-8"),
+            ContentType="text/html; charset=utf-8",
+        )
+        url = s3.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": INBOUND_BUCKET, "Key": view_key},
+            ExpiresIn=RAW_EMAIL_URL_TTL,
+        )
+        return preview, url
+    except Exception:
+        logger.exception("Could not fetch/parse body for %s", message_id)
+        return "", None
+
+
+def _extract_bodies(msg):
+    """Return (text/plain, text/html) body strings (either may be None)."""
+    plain, html = None, None
+    for part in msg.walk() if msg.is_multipart() else [msg]:
+        ctype = part.get_content_type()
+        if ctype == "text/plain" and plain is None:
+            plain = _decode_part(part)
+        elif ctype == "text/html" and html is None:
+            html = _decode_part(part)
+    return plain, html
+
+
+def _strip_tags(html):
+    return re.sub(r"<[^>]+>", " ", html) if html else ""
+
+
+def _html_escape(s):
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _decode_part(part):
+    try:
+        payload = part.get_payload(decode=True) or b""
+        return payload.decode(part.get_content_charset() or "utf-8", "replace")
+    except Exception:
+        return ""
 
 
 def _write_audit_log(

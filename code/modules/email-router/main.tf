@@ -3,9 +3,9 @@ locals {
 
   base_statements = [
     {
-      Sid      = "ReadRawEmail"
+      Sid      = "ReadRawWriteRenderedEmail"
       Effect   = "Allow"
-      Action   = "s3:GetObject"
+      Action   = ["s3:GetObject", "s3:PutObject"]
       Resource = "${var.inbound_bucket_arn}/*"
     },
     {
@@ -93,6 +93,8 @@ resource "aws_lambda_function" "router" {
   environment {
     variables = {
       INBOUND_BUCKET      = var.inbound_bucket_name
+      INBOUND_PREFIX      = var.inbound_object_prefix
+      RENDERED_PREFIX     = "rendered/"
       OWNERSHIP_TABLE     = var.ownership_table_name
       ROUTING_LOG_TABLE   = var.routing_log_table_name
       SF_SECRET_ARN       = var.salesforce_secret_arn

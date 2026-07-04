@@ -19,3 +19,6 @@
 
 # Scratch
 *.log
+
+# Client requirements source (confidential — keep out of the repo)
+reqs/

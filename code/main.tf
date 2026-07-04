@@ -69,6 +69,7 @@ module "email_router" {
 
   inbound_bucket_name    = module.email_storage.bucket_name
   inbound_bucket_arn     = module.email_storage.bucket_arn
+  inbound_object_prefix  = var.inbound_object_prefix
   ownership_table_name   = module.email_storage.ownership_table_name
   ownership_table_arn    = module.email_storage.ownership_table_arn
   routing_log_table_name = module.email_storage.routing_log_table_name
