@@ -42,7 +42,7 @@ Then confirm, in order:
    `aws connect describe-contact --instance-id <id> --contact-id <id>` or the
    agent workspace UI (Contact Search).
 
-**Success bar (matches PCNA's stated criteria):** no manual reassignment
+**Success bar (matches the client's stated criteria):** no manual reassignment
 needed, routing used real Salesforce data, and ownership is immediately
 reflected (change the Case Owner in Salesforce, resend, confirm the new owner
 shows up on the next Task).
@@ -65,7 +65,7 @@ Confirm:
 
 **Success bar:** ownership persists across the thread even when the case
 number isn't repeated — internal ownership stays visible/auditable, matching
-PCNA's "shared mailbox appears seamless to customers, ownership remains
+the client's "shared mailbox appears seamless to customers, ownership remains
 visible internally" bar.
 
 ## 5. Unassigned / first-contact case

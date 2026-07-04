@@ -38,7 +38,7 @@ Inbound email → SES Receipt Rule (verified domain)
   for inbound email processing — no extra S3 event-notification wiring needed,
   and it gives a raw-MIME audit copy for free.
 - **Live Salesforce query on every case-numbered email** (rather than a sync
-  job) trivially satisfies PCNA's Scenario 1 success criterion "ownership
+  job) trivially satisfies the client's Scenario 1 success criterion "ownership
   changes are reflected immediately" — there is no cache to go stale.
 - **`MailboxOwnership` as a fallback lookup** (not the primary source of truth)
   handles reply threads that don't echo the case number in the subject, which

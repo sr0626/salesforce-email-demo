@@ -40,7 +40,7 @@ interaction), so it needs an app with a `client_id` / `client_secret`.
 > identical.)
 
 > **Naming:** keep the app name **generic/company-neutral** (e.g.
-> `Email Case Router`). Reserve "PCNA" for demo email copy and agent prompts
+> `Email Case Router`). Reserve "the client" for demo email copy and agent prompts
 > only, so the demo re-skins easily for other prospects.
 
 ### 3a. Create the app

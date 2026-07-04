@@ -1,11 +1,11 @@
-# PCNA CCaaS Demo POC — Context & Scope
+# CCaaS Demo POC — Context & Scope
 
 ## Source document
-This POC is derived from `PCNA Contact Center Replacement Summary.docx`
-(discovery notes for PCNA's Five9 → CCaaS replacement evaluation).
+This POC is derived from `the client's Contact Center Replacement Summary.docx`
+(discovery notes for the client's Five9 → CCaaS replacement evaluation).
 
 ## Why this POC exists
-PCNA's evaluation is **email-centric**, not voice-centric. Their customer service
+The client's evaluation is **email-centric**, not voice-centric. Their customer service
 org relies on Salesforce Service Cloud + Five9, and email is the primary area
 under evaluation. Suppliers (including a candidate Amazon Connect solution) are
 expected to demo specific business scenarios, not generic contact-center
@@ -27,7 +27,7 @@ Key facts from the discovery doc:
    Number in the subject; replies must auto-route back to the Case Owner with no
    manual reassignment.
 2. **Shared mailbox with individual ownership** — 100+ agents share addresses
-   like `ordersuccess@pcna.com`, but ownership per thread must stay visible/
+   like `ordersuccess@company.com`, but ownership per thread must stay visible/
    auditable and replies must route to the original owner.
 3. **Hybrid routing (ACD + agent self-selection)** — some teams need automatic
    assignment, others need queue visibility + cherry-picking, simultaneously.
@@ -49,7 +49,7 @@ auditable) with **minimal customization**.
 
 ## POC scope decision
 Building all 8 scenarios is not worth it for a first POC. This POC targets the
-two scenarios PCNA weighted highest and that are structurally the hardest to
+two scenarios the client weighted highest and that are structurally the hardest to
 fake — if these work, the rest is largely reuse:
 
 - **Scenario 1** — Salesforce case-based email routing (build, this round)
@@ -58,7 +58,7 @@ fake — if these work, the rest is largely reuse:
   the same queue + contact-attribute plumbing this POC creates.
 - **Scenario 4, 5, 7** — out of scope for this round (outbound tracking,
   account-level visibility UI, agent productivity tooling).
-- **Scenario 8 (AI)** — explicitly skipped; PCNA itself flagged this as low
+- **Scenario 8 (AI)** — explicitly skipped; the client itself flagged this as low
   priority.
 
 ## This is a new, standalone repo
