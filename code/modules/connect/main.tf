@@ -98,6 +98,104 @@ resource "aws_connect_user" "agent" {
   }
 }
 
+# ---- Owner-targeted routing: per-owner queue + routing profile + flow + agent ----
+# Each owner's Task is routed by the Lambda to that owner's dedicated flow, which
+# targets that owner's queue, served only by that owner's agent.
+
+data "aws_connect_security_profile" "owner_agent" {
+  count       = length(var.agents) > 0 ? 1 : 0
+  instance_id = aws_connect_instance.this.id
+  name        = var.agent_security_profile_name
+}
+
+resource "aws_connect_queue" "owner" {
+  for_each              = var.agents
+  instance_id           = aws_connect_instance.this.id
+  name                  = "Owner-${each.key}-Queue"
+  description           = "Owner-targeted queue for SF owner ${each.value.salesforce_owner_id} (${each.value.first_name} ${each.value.last_name})"
+  hours_of_operation_id = aws_connect_hours_of_operation.always_open.hours_of_operation_id
+  max_contacts          = var.queue_max_contacts
+}
+
+resource "aws_connect_routing_profile" "owner" {
+  for_each                  = var.agents
+  instance_id               = aws_connect_instance.this.id
+  name                      = "Owner-${each.key}-Profile"
+  description               = "Owner-targeted routing profile for ${each.key}"
+  default_outbound_queue_id = aws_connect_queue.owner[each.key].queue_id
+
+  media_concurrencies {
+    channel     = "TASK"
+    concurrency = var.task_concurrency
+  }
+
+  queue_configs {
+    channel  = "TASK"
+    delay    = 0
+    priority = 1
+    queue_id = aws_connect_queue.owner[each.key].queue_id
+  }
+}
+
+resource "aws_connect_contact_flow" "owner" {
+  for_each    = var.agents
+  instance_id = aws_connect_instance.this.id
+  name        = "Owner-${each.key}-Routing"
+  type        = "CONTACT_FLOW"
+  description = "Routes Tasks for SF owner ${each.value.salesforce_owner_id} into Owner-${each.key}-Queue"
+
+  content = jsonencode({
+    Version     = "2019-10-30"
+    StartAction = "t01"
+    Actions = [
+      {
+        Identifier = "t01"
+        Type       = "UpdateContactTargetQueue"
+        Parameters = { QueueId = aws_connect_queue.owner[each.key].queue_id }
+        Transitions = {
+          NextAction = "t02"
+          Errors     = [{ NextAction = "t_end", ErrorType = "NoMatchingError" }]
+          Conditions = []
+        }
+      },
+      {
+        Identifier = "t02"
+        Type       = "TransferContactToQueue"
+        Parameters = {}
+        Transitions = {
+          NextAction = "t_end"
+          Errors = [
+            { NextAction = "t_end", ErrorType = "NoMatchingError" },
+            { NextAction = "t_end", ErrorType = "QueueAtCapacity" }
+          ]
+          Conditions = []
+        }
+      },
+      { Identifier = "t_end", Type = "DisconnectParticipant", Parameters = {}, Transitions = {} }
+    ]
+  })
+}
+
+resource "aws_connect_user" "owner" {
+  for_each = var.agents
+
+  instance_id          = aws_connect_instance.this.id
+  name                 = each.value.username
+  password             = each.value.password
+  routing_profile_id   = aws_connect_routing_profile.owner[each.key].routing_profile_id
+  security_profile_ids = [data.aws_connect_security_profile.owner_agent[0].security_profile_id]
+
+  phone_config {
+    phone_type  = "SOFT_PHONE"
+    auto_accept = false
+  }
+
+  identity_info {
+    first_name = each.value.first_name
+    last_name  = each.value.last_name
+  }
+}
+
 # Task contact flow — set target queue, transfer the Task in, disconnect.
 resource "aws_connect_contact_flow" "email_task" {
   instance_id = aws_connect_instance.this.id

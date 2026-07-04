@@ -1,4 +1,4 @@
-# PCNA CCaaS Demo POC — Email Routing on Amazon Connect
+# CCaaS Demo POC — Email Routing on Amazon Connect
 
 Implementation-ready spec for a **new, standalone Terraform** repo that demos
 Salesforce case-based email routing on Amazon Connect. Written so a fresh Claude
@@ -7,7 +7,7 @@ conversation context — create a new repo and build against this spec; it has n
 dependency on any other project.
 
 **Read in this order:**
-1. [00-context.md](00-context.md) — why this exists, PCNA's demo scenarios, what's
+1. [00-context.md](00-context.md) — why this exists, the demo scenarios, what's
    in/out of scope for this round, locked-in architecture decisions.
 2. [01-architecture.md](01-architecture.md) — data flow diagram, component list,
    rationale for each design choice.
@@ -27,7 +27,7 @@ dependency on any other project.
    checklist proving Scenario 1 (Salesforce case routing) and Scenario 2
    (shared mailbox ownership continuity) actually work.
 
-**Scope of this round:** Scenario 1 + Scenario 2 only (from PCNA's 8 demo
+**Scope of this round:** Scenario 1 + Scenario 2 only (from the 8 demo
 scenarios). Scenarios 3/6 need no new build (reuse this round's queue/attribute
 plumbing). Scenarios 4/5/7/8 are explicitly out of scope — see
 [00-context.md](00-context.md) for why.

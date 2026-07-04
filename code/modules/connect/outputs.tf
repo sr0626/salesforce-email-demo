@@ -30,3 +30,8 @@ output "agent_username" {
   description = "The demo agent username, if one was created."
   value       = var.agent_username != "" ? var.agent_username : null
 }
+
+output "owner_flow_map" {
+  description = "Map of Salesforce OwnerId -> that owner's contact flow ARN (Lambda routes each Task by owner)."
+  value       = { for k, a in var.agents : a.salesforce_owner_id => aws_connect_contact_flow.owner[k].arn }
+}

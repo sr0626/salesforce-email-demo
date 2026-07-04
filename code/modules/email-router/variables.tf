@@ -62,3 +62,9 @@ variable "case_id_regex" {
   type        = string
   description = "Regex to extract the Case Number from the subject (group 1)."
 }
+
+variable "owner_flow_map" {
+  type        = map(string)
+  description = "Map of Salesforce OwnerId -> owner-specific contact flow ARN. The Lambda routes a Task via the matching owner's flow; unmapped owners fall back to contact_flow_arn."
+  default     = {}
+}

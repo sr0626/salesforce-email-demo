@@ -154,6 +154,20 @@ variable "agent_security_profile_name" {
   default     = "Agent"
 }
 
+# --- Owner-targeted routing: one agent + dedicated queue/flow per Salesforce owner ---
+
+variable "agents" {
+  description = "Per-owner demo agents. Map key = logical name; each maps a Salesforce OwnerId to a Connect agent + dedicated queue/flow so Tasks route to that owner's agent."
+  type = map(object({
+    username            = string
+    password            = string
+    first_name          = string
+    last_name           = string
+    salesforce_owner_id = string
+  }))
+  default = {}
+}
+
 ########################################
 # Lambda
 ########################################

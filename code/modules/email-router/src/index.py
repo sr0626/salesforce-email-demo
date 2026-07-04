@@ -41,6 +41,8 @@ SHARED_MAILBOXES = set(
     a.strip().lower() for a in os.environ["SHARED_MAILBOXES"].split(",") if a.strip()
 )
 SF_API_VERSION = os.environ.get("SF_API_VERSION", "v60.0")
+# {salesforceOwnerId: contactFlowArn} — routes each Task to that owner's agent.
+OWNER_FLOW_MAP = json.loads(os.environ.get("OWNER_FLOW_MAP", "{}"))
 
 # reused across warm invocations to avoid an OAuth round-trip per email
 _sf_token_cache = {}  # {"access_token":..., "instance_url":..., "expires_at": epoch}
@@ -165,9 +167,12 @@ def _lookup_ownership_fallback(mailbox, customer_email):
 def _start_connect_task(
     subject, mailbox, from_addr, case_number, owner_id, owner_name, is_shared
 ):
+    # Route to the owner's dedicated flow (-> owner's queue/agent); if the owner
+    # isn't mapped (or is unassigned), fall back to the shared flow/queue.
+    flow_arn = OWNER_FLOW_MAP.get(owner_id or "", os.environ["TASK_FLOW_ARN"])
     resp = connect.start_task_contact(
         InstanceId=os.environ["CONNECT_INSTANCE_ID"],
-        ContactFlowId=os.environ["TASK_FLOW_ARN"],
+        ContactFlowId=flow_arn,
         Name=f"Email: {subject[:50]}",
         Description=f"From {from_addr} to {mailbox}",
         Attributes={

@@ -39,6 +39,8 @@ module "connect" {
   agent_first_name            = var.agent_first_name
   agent_last_name             = var.agent_last_name
   agent_security_profile_name = var.agent_security_profile_name
+
+  agents = var.agents
 }
 
 module "email_storage" {
@@ -78,6 +80,7 @@ module "email_router" {
   connect_instance_id  = module.connect.instance_id
   connect_instance_arn = module.connect.instance_arn
   contact_flow_arn     = module.connect.contact_flow_arn
+  owner_flow_map       = module.connect.owner_flow_map
 
   shared_mailboxes = var.shared_mailboxes
   case_id_regex    = var.case_id_regex

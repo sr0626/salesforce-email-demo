@@ -39,3 +39,19 @@ lambda_function_name = "email-case-router-lambda"
 # lambda_timeout               = 30
 # lambda_memory_size           = 256
 # extra_tags                   = { Owner = "sateesh" }
+
+# Optional fallback agent (unmapped owners land here):
+# agent_username = "demo.agent"
+# agent_password = "ChangeMe123"
+
+# Owner-targeted routing — one Connect agent per Salesforce Case Owner.
+# The Lambda routes each Task to the owner's flow by Salesforce OwnerId.
+# agents = {
+#   epic = {
+#     username            = "agent.epic"
+#     password            = "ChangeMe123"
+#     first_name          = "OrgFarm"
+#     last_name           = "EPIC"
+#     salesforce_owner_id = "005dL00001nclyrQAA"
+#   }
+# }

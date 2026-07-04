@@ -99,6 +99,7 @@ resource "aws_lambda_function" "router" {
       SF_API_VERSION      = var.salesforce_api_version
       CONNECT_INSTANCE_ID = var.connect_instance_id
       TASK_FLOW_ARN       = var.contact_flow_arn
+      OWNER_FLOW_MAP      = jsonencode(var.owner_flow_map)
       SHARED_MAILBOXES    = var.shared_mailboxes
       CASE_ID_REGEX       = var.case_id_regex
     }
