@@ -65,9 +65,21 @@ def handler(event, context):
                 storage.upsert_ownership(mailbox, from_addr, owner_id, owner_name, case_number, sf_case_id)
         else:
             # Scenario 2: no Case # → remembered owner for this customer.
-            owner_id, owner_name, sf_case_id = storage.lookup_ownership_fallback(mailbox, from_addr)
-            if owner_id:
-                outcome = "fallback"
+            owner_id, owner_name, sf_case_id, remembered_case = storage.lookup_ownership_fallback(mailbox, from_addr)
+            if owner_id or sf_case_id:
+                # Continuation of a known thread. If we know the case, re-read its
+                # CURRENT owner + number live so a Salesforce reassignment (agent or
+                # supervisor Change Owner) is honored, and the Task shows the caseId.
+                if sf_case_id:
+                    live_owner, live_name, live_case = salesforce.lookup_case_by_id(sf_case_id)
+                    if live_owner:
+                        owner_id, owner_name = live_owner, live_name
+                    case_number = live_case or remembered_case
+                else:
+                    case_number = remembered_case
+                outcome = "fallback" if owner_id else "unassigned"
+                if owner_id:
+                    storage.upsert_ownership(mailbox, from_addr, owner_id, owner_name, case_number, sf_case_id)
             elif AUTO_CREATE_CASE:
                 # New inquiry: no case and no history → create a Salesforce Case.
                 case_number, owner_id, owner_name, sf_case_id = salesforce.create_case(

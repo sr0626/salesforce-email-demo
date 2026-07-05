@@ -172,6 +172,39 @@ variable "agent_security_profile_name" {
   default     = "Agent"
 }
 
+# --- Supervisor user (reporting / review — final-exercise steps 10 & 11) ---
+
+variable "supervisor_username" {
+  type        = string
+  description = "Login for an optional supervisor user (native dashboards, contact search). Empty = don't create."
+  default     = ""
+}
+
+variable "supervisor_password" {
+  type        = string
+  description = "Supervisor password (>=8 chars, upper, lower, number). Stored in local tfstate."
+  default     = ""
+  sensitive   = true
+}
+
+variable "supervisor_first_name" {
+  type        = string
+  description = "Supervisor first name."
+  default     = "Demo"
+}
+
+variable "supervisor_last_name" {
+  type        = string
+  description = "Supervisor last name."
+  default     = "Supervisor"
+}
+
+variable "supervisor_security_profile_name" {
+  type        = string
+  description = "Existing Connect security profile for the supervisor (e.g. CallCenterManager)."
+  default     = "CallCenterManager"
+}
+
 # --- Owner-targeted routing: one agent + dedicated queue/flow per Salesforce owner ---
 
 variable "agents" {

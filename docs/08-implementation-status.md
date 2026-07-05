@@ -45,12 +45,12 @@ features land. Legend:
 |---|---|---|
 | Multiple agents on a common address | ✅ | Shared `ordersuccess@ccaas.evolvity.com` |
 | Visibility into assigned owner | ✅ | `ownerName` on Task + audit table |
-| Routing of replies to original owner | ✅ | DynamoDB fallback → remembered owner's agent |
-| Ownership transfer workflows | ❌ Gap | No built workflow to hand a thread to a new owner and persist it. (Native Connect task transfer is demoable but doesn't update the ownership record / Salesforce.) |
-| Supervisor reassignment capabilities | ❌ Gap | No supervisor "reassign owner" flow. (Reassigning the **Case in Salesforce** is honored on the next case-numbered reply via live lookup; the no-case fallback would stay stale.) |
+| Routing of replies to original owner | ✅ | No-case reply → remembered owner; the case's **current** owner is re-read live so reassignment is honored, and the Task shows the caseId |
+| Ownership transfer workflows | ✅ | Reassign via **Salesforce Change Owner** (system of record); routing honors it live on the **next reply** — case-numbered via live lookup, **and no-case replies now re-read the case's current owner** (not the cached one). Connect task transfer remains a separate *collaboration/consult* action (doesn't change ownership, by design). |
+| Supervisor reassignment capabilities | ✅ | A supervisor reassigns the Case owner in Salesforce → the next customer reply routes to the new owner's agent on both paths (live re-verify). |
 | *Success:* seamless to customer | ✅ | Customer just emails the shared address |
 | *Success:* ownership visible & auditable | ✅ | Task attributes + `email-routing-log` table |
-| *Success:* continuity maintained | ✅ | Fallback continuity (transfer/reassign caveats above) |
+| *Success:* continuity maintained | ✅ | Every reply routes to the thread's **current** owner throughout the journey (live re-read; follows reassignment; never dropped). Tracked per (mailbox, customer) — last-known case/owner; multiple concurrent cases per customer with a no-`Case#` reply use the most-recent (documented heuristic). |
 
 ---
 
@@ -58,9 +58,12 @@ features land. Legend:
 
 | # | Gap | Detail | Suggested fix |
 |---|---|---|---|
-| 1 | Fallback can go stale on ownership change | Case-numbered emails reflect the live SF owner; the *no-case* fallback trusts the remembered DynamoDB owner | On fallback, re-verify the current owner from Salesforce (look up the customer's open case) instead of trusting DynamoDB alone — small change, makes "reflected immediately" true on both paths |
-| 2 | Ownership transfer / supervisor reassignment (S2) | No workflow to hand a thread to a new owner or supervisor-reassign | Lean on native Connect transfer/monitor for the demo; add a lightweight "reassign owner" that updates the ownership record (+ optionally Salesforce) |
-| 3 | Thread continuity as one interaction (S1) | A Task per reply today | Link replies via Connect related-contacts so a thread is one interaction |
+| 1 | Thread continuity as one interaction (S1) | A Task per reply today | Link replies via Connect related-contacts so a thread is one interaction |
+| 2 | Case SLA / "overdue" tracking (**TODO — revisit**) | No SLA/response-time or "overdue" tracking on cases; Salesforce "Overdue" applies only to due-dated Activities, not our emails | Salesforce **Entitlements & Milestones** or **Case Escalation Rules / Case Age** (Setup); or a scheduled check on `email-routing-log` |
+
+> Resolved: *ownership-change on the no-case fallback* (now re-reads the case's
+> current owner live) and *ownership transfer / supervisor reassignment* (done via
+> Salesforce Change Owner, honored live on both paths).
 
 ---
 
@@ -99,12 +102,12 @@ Deliberate simplifications for the POC (not defects):
 |---|---|---|---|
 | 1 | Customer sends an inquiry | ✅ | Inbound email received by SES |
 | 2 | Salesforce case is created or identified | ✅ | Identified via `Case #` in subject; a new inquiry (no case #, no history) now **auto-creates a Salesforce Case** and routes to its owner |
-| 3 | Agent responds from a shared mailbox | ⬜ | Outbound reply not built; the POC begins at the inbound reply |
+| 3 | Agent responds from a shared mailbox | 📋 planned | Outbound reply via Amazon Connect native email channel — design in [09-outbound-connect-email-plan.md](09-outbound-connect-email-plan.md); build pending |
 | 4 | Customer replies | ✅ | Inbound reply received |
 | 5 | Platform identifies the Salesforce Case ID | ✅ | Regex on subject |
 | 6 | Email routes to the assigned owner | ✅ | Owner-targeted routing to the owner's agent |
 | 7 | Agent opens the interaction and sees: customer history / open emails / open cases / related account activity / assigned ownership | ✅ | Via the **`SalesforceCase`** deep link + `Email`/`bodyPreview`. Cases link to a **Contact/Account** (sender email, find-or-create); each email is logged as an `EmailMessage` on the Case **and** related to the Contact (`EmailMessageRelation`). Salesforce then shows the full 360: **ownership** (Case), **open emails + case history** (Case Activity), **customer history + open cases** (Contact), and **related account activity** (Account, with the org roll-up setting on — see limitations). |
-| 8 | Agent collaborates with another employee | ⬜ | Native Connect transfer only; not built |
-| 9 | Agent sends a response | ❌ | Outbound reply from the platform not built (Scenario 4/7) |
-| 10 | Interaction is tracked, reported, and auditable | 🟡 | Audit log built (tracked/auditable); no reporting UI |
-| 11 | Supervisors can review routing decisions, ownership changes, and performance metrics | 🟡 | Data in DynamoDB; no supervisor dashboard |
+| 8 | Agent collaborates with another employee | ✅ | Per-agent **USER Quick Connects** provisioned (`Transfer-to-<agent>`); agent transfers/consults a colleague via native Connect transfer. (One-time console step: associate the quick connects to the queue to list them in the transfer menu.) |
+| 9 | Agent sends a response | 📋 planned | Same as step 3 — Connect native email channel ([09-outbound-connect-email-plan.md](09-outbound-connect-email-plan.md)); build pending |
+| 10 | Interaction is tracked, reported, and auditable | ✅ | Connect **native real-time + historical dashboards** and **contact search** (routing decisions + attributes), plus the `email-routing-log` DynamoDB audit trail |
+| 11 | Supervisors can review routing decisions, ownership changes, and performance metrics | ✅ | **Supervisor user** (`demo.supervisor`, CallCenterManager) views the dashboards/contact search; ownership changes are in `email-routing-log` + the Salesforce case history |

@@ -22,8 +22,8 @@ def lookup_ownership_fallback(mailbox, customer_email):
         Key={"mailbox": mailbox, "customerEmail": customer_email.lower()}
     ).get("Item")
     if not item:
-        return None, None, None
-    return item["ownerId"], item["ownerName"], item.get("sfCaseId")
+        return None, None, None, None
+    return item["ownerId"], item["ownerName"], item.get("sfCaseId"), item.get("caseId")
 
 
 def write_audit_log(

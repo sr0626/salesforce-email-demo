@@ -196,6 +196,61 @@ resource "aws_connect_user" "owner" {
   }
 }
 
+# ---- Collaboration (final-exercise step 8): USER quick connects so an agent can
+# transfer/consult a colleague. Associate them to a queue in the console to make
+# them appear in the agent's transfer list (kept out of Terraform to avoid a
+# queue<->quickconnect<->user dependency cycle).
+data "aws_connect_contact_flow" "agent_transfer" {
+  count       = length(var.agents) > 0 ? 1 : 0
+  instance_id = aws_connect_instance.this.id
+  name        = "Default agent transfer"
+}
+
+resource "aws_connect_quick_connect" "owner" {
+  for_each    = var.agents
+  instance_id = aws_connect_instance.this.id
+  name        = "Transfer-to-${each.key}"
+  description = "Transfer/consult ${each.value.first_name} ${each.value.last_name}"
+
+  quick_connect_config {
+    quick_connect_type = "USER"
+    user_config {
+      user_id         = aws_connect_user.owner[each.key].user_id
+      contact_flow_id = data.aws_connect_contact_flow.agent_transfer[0].contact_flow_id
+    }
+  }
+}
+
+# ---- Reporting / supervisor review (final-exercise steps 10 & 11): a supervisor
+# user with a manager security profile can view Connect's native real-time +
+# historical dashboards, contact search (routing decisions + attributes), and the
+# email-routing-log audit table.
+data "aws_connect_security_profile" "supervisor" {
+  count       = var.supervisor_username != "" ? 1 : 0
+  instance_id = aws_connect_instance.this.id
+  name        = var.supervisor_security_profile_name
+}
+
+resource "aws_connect_user" "supervisor" {
+  count = var.supervisor_username != "" ? 1 : 0
+
+  instance_id          = aws_connect_instance.this.id
+  name                 = var.supervisor_username
+  password             = var.supervisor_password
+  routing_profile_id   = aws_connect_routing_profile.email.routing_profile_id
+  security_profile_ids = [data.aws_connect_security_profile.supervisor[0].security_profile_id]
+
+  phone_config {
+    phone_type  = "SOFT_PHONE"
+    auto_accept = false
+  }
+
+  identity_info {
+    first_name = var.supervisor_first_name
+    last_name  = var.supervisor_last_name
+  }
+}
+
 # Task contact flow — set target queue, transfer the Task in, disconnect.
 resource "aws_connect_contact_flow" "email_task" {
   instance_id = aws_connect_instance.this.id

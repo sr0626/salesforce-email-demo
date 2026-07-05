@@ -41,6 +41,12 @@ module "connect" {
   agent_security_profile_name = var.agent_security_profile_name
 
   agents = var.agents
+
+  supervisor_username              = var.supervisor_username
+  supervisor_password              = var.supervisor_password
+  supervisor_first_name            = var.supervisor_first_name
+  supervisor_last_name             = var.supervisor_last_name
+  supervisor_security_profile_name = var.supervisor_security_profile_name
 }
 
 module "email_storage" {

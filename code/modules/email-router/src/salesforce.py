@@ -159,6 +159,25 @@ def lookup_case_owner(case_number, contact_id=None, account_id=None):
         return None, None, None
 
 
+def lookup_case_by_id(sf_case_id):
+    """Re-read a case's CURRENT owner + number by record Id (used on the no-Case#
+    fallback so ownership reassignment done in Salesforce is honored live).
+    Returns (ownerId, ownerName, caseNumber)."""
+    try:
+        token, instance_url = get_token()
+        recs = _query(
+            instance_url, token,
+            f"SELECT OwnerId, Owner.Name, CaseNumber FROM Case WHERE Id = '{_soql_escape(sf_case_id)}'",
+        )
+        if not recs:
+            return None, None, None
+        rec = recs[0]
+        return rec["OwnerId"], (rec.get("Owner") or {}).get("Name"), rec.get("CaseNumber")
+    except Exception:
+        logger.exception("Salesforce lookup-by-id failed for %s", sf_case_id)
+        return None, None, None
+
+
 def create_case(subject, from_addr, contact_id=None, account_id=None):
     """Create a Case for a new inquiry; return (caseNumber, ownerId, ownerName,
     caseRecordId). Owner defaults to the Run As user unless assignment rules run."""
