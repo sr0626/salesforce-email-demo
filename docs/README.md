@@ -1,9 +1,11 @@
 # CCaaS Demo POC — Email Routing on Amazon Connect
 
-Implementation-ready spec for a **new, standalone Terraform** repo that demos
-Salesforce case-based email routing on Amazon Connect. Written so a fresh Claude
-session (VS Code) can implement it directly from these docs without prior
-conversation context — create a new repo and build against this spec; it has no
+A **standalone Terraform** repo that demos Salesforce case-based email routing on
+Amazon Connect. **Built and deployed** — Scenarios 1 & 2 work end-to-end
+(owner-targeted routing, shared-mailbox ownership continuity, and a Salesforce
+customer 360). For the live, per-requirement status see
+[08-implementation-status.md](08-implementation-status.md). These docs also serve
+as the build spec (a fresh session can rebuild from them); the repo has no
 dependency on any other project.
 
 **Read in this order:**
@@ -40,7 +42,11 @@ Contact Lens. Inbound email via a real SES-verified subdomain
 (`ccaas.evolvity.com`) — **SES is configured manually in the console, not by
 Terraform** (see doc 05). Case→Owner data from a real Salesforce Developer org.
 
-**Status:** planning complete, no code written yet. This is a fresh repo — it
-creates its own Amazon Connect instance, queue, routing profile, and task flow
-from scratch (not layered onto any existing Connect deployment), plus the
-SES/Salesforce/Lambda/DynamoDB email-routing pieces.
+**Status:** built, deployed, and verified. Scenarios 1 & 2 work end-to-end —
+owner-targeted routing to the owning agent, shared-mailbox ownership continuity,
+auto Case creation for new inquiries, in-Task email preview + rendered link, and
+a linked Salesforce Contact/Account customer 360. The stack creates its own
+Amazon Connect instance, queue, routing profile, and task flow from scratch, plus
+the SES/Salesforce/Lambda/DynamoDB email-routing pieces. **Outbound reply
+(steps 3 & 9) is pending SES production access.** Live status + gaps:
+[08-implementation-status.md](08-implementation-status.md).

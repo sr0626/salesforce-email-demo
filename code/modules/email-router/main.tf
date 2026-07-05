@@ -48,8 +48,9 @@ locals {
 
 data "archive_file" "lambda" {
   type        = "zip"
-  source_file = "${path.module}/src/index.py"
+  source_dir  = "${path.module}/src"
   output_path = "${path.module}/build/index.zip"
+  excludes    = ["__pycache__"]
 }
 
 resource "aws_iam_role" "lambda" {

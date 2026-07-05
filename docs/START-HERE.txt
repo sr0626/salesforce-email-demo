@@ -1,8 +1,17 @@
-Paste this into a fresh Claude Code session (VS Code), in a new empty repo:
+STATUS: This POC is already BUILT, DEPLOYED, and VERIFIED.
+Repo: https://github.com/sr0626/salesforce-email-demo
+- Code lives in code/ (Terraform + Lambda). Docs in docs/.
+- Live, per-requirement status: docs/08-implementation-status.md
+- How it works + demo script: docs/07-demo-walkthrough.md
 
-Read all the docs in /Users/sateesh/D-Drive/MyProjects/aws-poc/manual/email-demo/docs
-starting with README.md, in the order it specifies. Then implement the plan in
-02-implementation-spec.md: create a new standalone Terraform repo here
-(main.tf + variables.tf + outputs.tf + modules/ + scripts/) exactly as
-specified in that doc. Follow the conventions described in the doc. Do NOT run
+To resume work: open this project and say "resume".
+
+----------------------------------------------------------------------
+(Only if you want to REBUILD from scratch in a brand-new empty repo,
+paste this into a fresh Claude Code session:)
+
+Read all the docs in this docs/ folder starting with README.md, in the order it
+specifies. Then implement the plan in 02-implementation-spec.md: create a new
+standalone Terraform repo (main.tf + variables.tf + outputs.tf + modules/ +
+scripts/) exactly as specified. Follow the conventions in the doc. Do NOT run
 terraform apply or any AWS CLI command — write the code only and let me run it.
