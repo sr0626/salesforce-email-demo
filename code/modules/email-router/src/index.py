@@ -50,6 +50,10 @@ SF_API_VERSION = os.environ.get("SF_API_VERSION", "v60.0")
 OWNER_FLOW_MAP = json.loads(os.environ.get("OWNER_FLOW_MAP", "{}"))
 # When an email has no Case # and no prior owner, create a Salesforce Case.
 AUTO_CREATE_CASE = os.environ.get("AUTO_CREATE_CASE", "true").lower() == "true"
+# Log each inbound email onto its Salesforce Case (shows in case history).
+LOG_EMAIL_TO_SF = os.environ.get("LOG_EMAIL_TO_SF", "true").lower() == "true"
+# Link cases to a Contact/Account (by sender email) for the customer 360.
+LINK_CONTACT = os.environ.get("LINK_CONTACT", "true").lower() == "true"
 
 INBOUND_BUCKET = os.environ.get("INBOUND_BUCKET", "")
 INBOUND_PREFIX = os.environ.get("INBOUND_PREFIX", "inbound/")
@@ -69,7 +73,8 @@ def handler(event, context):
         # Normalize to the bare local@domain — headers may arrive as
         # "Display Name <addr>", which must not pollute keys or defeat the
         # shared-mailbox match.
-        from_addr = parseaddr(mail["commonHeaders"].get("from", [""])[0])[1].lower()
+        from_display, from_addr = parseaddr(mail["commonHeaders"].get("from", [""])[0])
+        from_addr = from_addr.lower()
         to_emails = [
             addr.lower()
             for _, addr in getaddresses(mail["commonHeaders"].get("to", []))
@@ -83,40 +88,52 @@ def handler(event, context):
         m = CASE_RE.search(subject)
         case_number = m.group(1) if m else None
 
+        # Resolve the customer once (Contact + Account) so the case, its emails,
+        # and the customer's activity all tie to the same 360.
+        contact_id, account_id = (
+            _resolve_contact_account(from_addr, from_display) if LINK_CONTACT else (None, None)
+        )
+
         if case_number:
             # Scenario 1: subject carries a Case # → live owner lookup.
-            owner_id, owner_name = _lookup_salesforce_case_owner(case_number)
+            owner_id, owner_name, sf_case_id = _lookup_salesforce_case_owner(case_number, contact_id, account_id)
             outcome = "resolved" if owner_id else "unassigned"
             if owner_id:
-                _upsert_ownership(mailbox, from_addr, owner_id, owner_name, case_number)
+                _upsert_ownership(mailbox, from_addr, owner_id, owner_name, case_number, sf_case_id)
         else:
             # Scenario 2: no Case # → remembered owner for this customer.
-            owner_id, owner_name = _lookup_ownership_fallback(mailbox, from_addr)
+            owner_id, owner_name, sf_case_id = _lookup_ownership_fallback(mailbox, from_addr)
             if owner_id:
                 outcome = "fallback"
             elif AUTO_CREATE_CASE:
                 # New inquiry: no case and no history → create a Salesforce Case,
                 # then route to its owner (Email-to-Case style).
-                case_number, owner_id, owner_name = _create_salesforce_case(subject, from_addr)
+                case_number, owner_id, owner_name, sf_case_id = _create_salesforce_case(subject, from_addr, contact_id, account_id)
                 outcome = "created" if case_number else "unassigned"
                 if owner_id:
-                    _upsert_ownership(mailbox, from_addr, owner_id, owner_name, case_number)
+                    _upsert_ownership(mailbox, from_addr, owner_id, owner_name, case_number, sf_case_id)
             else:
                 outcome = "unassigned"
 
         is_shared = mailbox in SHARED_MAILBOXES
-        body_preview, raw_url = _fetch_body_and_link(message_id)
-        contact_id = _start_connect_task(
+        body_preview, raw_url, text_body, html_body = _fetch_body_and_link(message_id)
+        case_url = _case_url(sf_case_id)
+
+        # Log the email onto the Salesforce Case (case history) and relate it to
+        # the Contact (so it also shows on the customer's Activity timeline).
+        if sf_case_id and LOG_EMAIL_TO_SF:
+            _log_email_to_case(sf_case_id, subject, from_addr, mailbox, text_body, html_body, contact_id)
+        task_contact_id = _start_connect_task(
             subject, mailbox, from_addr, case_number, owner_id, owner_name,
-            is_shared, body_preview, raw_url,
+            is_shared, body_preview, raw_url, case_url,
         )
         _write_audit_log(
             message_id, mailbox, from_addr, subject, case_number,
-            owner_id, owner_name, is_shared, contact_id, outcome,
+            owner_id, owner_name, is_shared, task_contact_id, outcome,
         )
         logger.info(
             "routed messageId=%s case=%s owner=%s outcome=%s contact=%s",
-            message_id, case_number, owner_name, outcome, contact_id,
+            message_id, case_number, owner_name, outcome, task_contact_id,
         )
     return {"status": "ok"}
 
@@ -148,40 +165,177 @@ def _get_salesforce_token():
     return tok["access_token"], tok["instance_url"]
 
 
-def _lookup_salesforce_case_owner(case_number):
+def _case_url(sf_case_id):
+    """Build a Lightning record URL for the agent to open the Case in Salesforce
+    (its 360: history, open cases, account, ownership). Best-effort."""
+    if not sf_case_id:
+        return None
+    try:
+        _, instance_url = _get_salesforce_token()
+        return f"{instance_url}/lightning/r/Case/{sf_case_id}/view"
+    except Exception:
+        return None
+
+
+# ---- small Salesforce REST helpers ----
+
+def _soql_escape(value):
+    return (value or "").replace("\\", "\\\\").replace("'", "\\'")
+
+
+def _sf_query(instance_url, token, soql):
+    url = f"{instance_url}/services/data/{SF_API_VERSION}/query?q=" + urllib.parse.quote(soql)
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read()).get("records", [])
+
+
+def _sf_insert(instance_url, token, sobject, body):
+    req = urllib.request.Request(
+        f"{instance_url}/services/data/{SF_API_VERSION}/sobjects/{sobject}",
+        data=json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())["id"]
+
+
+def _sf_update(instance_url, token, sobject, record_id, body):
+    req = urllib.request.Request(
+        f"{instance_url}/services/data/{SF_API_VERSION}/sobjects/{sobject}/{record_id}",
+        data=json.dumps(body).encode(),
+        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        method="PATCH",
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        r.read()  # 204 No Content
+
+
+def _split_name(display, from_addr):
+    """Best-effort (FirstName, LastName) from a display name, else the email."""
+    display = (display or "").strip()
+    if display:
+        parts = display.split()
+        if len(parts) >= 2:
+            return parts[0], " ".join(parts[1:])
+        return "", parts[0]
+    local = from_addr.split("@")[0] if "@" in from_addr else from_addr
+    return "", local or "Unknown"
+
+
+def _resolve_contact_account(from_addr, from_display):
+    """Find-or-create a Contact (by email) + Account (by email domain) so the Case
+    links to a customer 360. Returns (contactId, accountId). Best-effort."""
     try:
         token, instance_url = _get_salesforce_token()
-        soql = (
-            "SELECT Id, CaseNumber, OwnerId, Owner.Name FROM Case "
-            f"WHERE CaseNumber = '{case_number}'"
+        found = _sf_query(
+            instance_url, token,
+            f"SELECT Id, AccountId FROM Contact WHERE Email = '{_soql_escape(from_addr)}' LIMIT 1",
         )
-        url = (
-            f"{instance_url}/services/data/{SF_API_VERSION}/query?q="
-            + urllib.parse.quote(soql)
-        )
-        req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
-        with urllib.request.urlopen(req, timeout=10) as r:
-            recs = json.loads(r.read()).get("records", [])
-        if not recs:
-            return None, None
-        rec = recs[0]
-        return rec["OwnerId"], (rec.get("Owner") or {}).get("Name")
+        if found:
+            return found[0]["Id"], found[0].get("AccountId")
+
+        domain = from_addr.split("@")[-1] if "@" in from_addr else ""
+        account_id = None
+        if domain:
+            acc = _sf_query(instance_url, token, f"SELECT Id FROM Account WHERE Name = '{_soql_escape(domain)}' LIMIT 1")
+            account_id = acc[0]["Id"] if acc else _sf_insert(instance_url, token, "Account", {"Name": domain})
+
+        first, last = _split_name(from_display, from_addr)
+        contact_body = {"LastName": last, "Email": from_addr}
+        if first:
+            contact_body["FirstName"] = first
+        if account_id:
+            contact_body["AccountId"] = account_id
+        contact_id = _sf_insert(instance_url, token, "Contact", contact_body)
+        return contact_id, account_id
     except Exception:
-        logger.exception("Salesforce lookup failed for case %s", case_number)
+        logger.exception("Could not resolve contact/account for %s", from_addr)
         return None, None
 
 
-def _create_salesforce_case(subject, from_addr):
-    """Create a new Salesforce Case for a new inquiry, then return
-    (caseNumber, ownerId, ownerName). Best-effort — returns Nones on failure."""
+def _log_email_to_case(sf_case_id, subject, from_addr, to_addr, text_body, html_body, contact_id=None):
+    """Create an incoming EmailMessage on the Case (case history) and relate it to
+    the Contact so it also appears on the customer's Activity timeline.
+    Best-effort — never fails the routing."""
     try:
         token, instance_url = _get_salesforce_token()
-        payload = json.dumps({
+        body = {
+            "ParentId": sf_case_id,
+            "Subject": subject or "(no subject)",
+            "FromAddress": from_addr,
+            "ToAddress": to_addr,
+            "Incoming": True,
+            "Status": "0",  # New
+            "MessageDate": _now_iso(),
+        }
+        if text_body:
+            body["TextBody"] = text_body
+        if html_body:
+            body["HtmlBody"] = html_body
+        email_id = _sf_insert(instance_url, token, "EmailMessage", body)
+
+        # Relate the email to the Contact so it shows on the contact's (and,
+        # with account roll-up enabled, the account's) Activity timeline.
+        if contact_id:
+            try:
+                _sf_insert(instance_url, token, "EmailMessageRelation", {
+                    "EmailMessageId": email_id,
+                    "RelationId": contact_id,
+                    "RelationType": "FromAddress",
+                    "RelationAddress": from_addr,
+                })
+            except Exception:
+                logger.exception("Could not relate email %s to contact %s", email_id, contact_id)
+    except Exception:
+        logger.exception("Could not log email to case %s", sf_case_id)
+
+
+def _lookup_salesforce_case_owner(case_number, contact_id=None, account_id=None):
+    try:
+        token, instance_url = _get_salesforce_token()
+        soql = (
+            "SELECT Id, CaseNumber, OwnerId, Owner.Name, ContactId FROM Case "
+            f"WHERE CaseNumber = '{_soql_escape(case_number)}'"
+        )
+        recs = _sf_query(instance_url, token, soql)
+        if not recs:
+            return None, None, None
+        rec = recs[0]
+        # Link the case to the resolved Contact/Account for the customer 360 —
+        # only if the case doesn't already have one.
+        if contact_id and not rec.get("ContactId"):
+            patch = {"ContactId": contact_id}
+            if account_id:
+                patch["AccountId"] = account_id
+            try:
+                _sf_update(instance_url, token, "Case", rec["Id"], patch)
+            except Exception:
+                logger.exception("Could not link contact to case %s", rec.get("Id"))
+        return rec["OwnerId"], (rec.get("Owner") or {}).get("Name"), rec.get("Id")
+    except Exception:
+        logger.exception("Salesforce lookup failed for case %s", case_number)
+        return None, None, None
+
+
+def _create_salesforce_case(subject, from_addr, contact_id=None, account_id=None):
+    """Create a new Salesforce Case for a new inquiry, then return
+    (caseNumber, ownerId, ownerName, caseRecordId). Best-effort."""
+    try:
+        token, instance_url = _get_salesforce_token()
+        case_fields = {
             "Subject": subject or "(no subject)",
             "Description": f"Auto-created from email to shared mailbox. From: {from_addr}",
             "SuppliedEmail": from_addr,
             "Origin": "Email",
-        }).encode()
+        }
+        # Link to the resolved Contact/Account so the agent gets the customer 360.
+        if contact_id:
+            case_fields["ContactId"] = contact_id
+        if account_id:
+            case_fields["AccountId"] = account_id
+        payload = json.dumps(case_fields).encode()
         req = urllib.request.Request(
             f"{instance_url}/services/data/{SF_API_VERSION}/sobjects/Case",
             data=payload,
@@ -201,37 +355,40 @@ def _create_salesforce_case(subject, from_addr):
         with urllib.request.urlopen(req2, timeout=10) as r:
             recs = json.loads(r.read()).get("records", [])
         if not recs:
-            return None, None, None
+            return None, None, None, new_id
         rec = recs[0]
-        return rec.get("CaseNumber"), rec.get("OwnerId"), (rec.get("Owner") or {}).get("Name")
+        return rec.get("CaseNumber"), rec.get("OwnerId"), (rec.get("Owner") or {}).get("Name"), new_id
     except Exception:
         logger.exception("Salesforce case creation failed")
-        return None, None, None
+        return None, None, None, None
 
 
-def _upsert_ownership(mailbox, customer_email, owner_id, owner_name, case_number):
-    OWNERSHIP_TABLE.put_item(
-        Item={
-            "mailbox": mailbox,
-            "customerEmail": customer_email.lower(),
-            "ownerId": owner_id,
-            "ownerName": owner_name,
-            "caseId": case_number,
-            "lastUpdated": _now_iso(),
-        }
-    )
+def _upsert_ownership(mailbox, customer_email, owner_id, owner_name, case_number, sf_case_id=None):
+    item = {
+        "mailbox": mailbox,
+        "customerEmail": customer_email.lower(),
+        "ownerId": owner_id,
+        "ownerName": owner_name,
+        "caseId": case_number,
+        "lastUpdated": _now_iso(),
+    }
+    if sf_case_id:
+        item["sfCaseId"] = sf_case_id
+    OWNERSHIP_TABLE.put_item(Item=item)
 
 
 def _lookup_ownership_fallback(mailbox, customer_email):
     item = OWNERSHIP_TABLE.get_item(
         Key={"mailbox": mailbox, "customerEmail": customer_email.lower()}
     ).get("Item")
-    return (item["ownerId"], item["ownerName"]) if item else (None, None)
+    if not item:
+        return None, None, None
+    return item["ownerId"], item["ownerName"], item.get("sfCaseId")
 
 
 def _start_connect_task(
     subject, mailbox, from_addr, case_number, owner_id, owner_name, is_shared,
-    body_preview="", raw_url=None,
+    body_preview="", raw_url=None, case_url=None,
 ):
     # Route to the owner's dedicated flow (-> owner's queue/agent); if the owner
     # isn't mapped (or is unassigned), fall back to the shared flow/queue.
@@ -255,23 +412,27 @@ def _start_connect_task(
         Description=f"From {from_addr} to {mailbox}",
         Attributes=attributes,
     )
-    # A clickable link to a browser-renderable view of the email in the Task.
+    # Clickable links in the Task: the rendered email, and the Salesforce Case
+    # (its 360 — history, open cases, account, ownership).
+    refs = {}
     if raw_url:
-        kwargs["References"] = {
-            "Email": {"Value": raw_url, "Type": "URL"}
-        }
+        refs["Email"] = {"Value": raw_url, "Type": "URL"}
+    if case_url:
+        refs["SalesforceCase"] = {"Value": case_url, "Type": "URL"}
+    if refs:
+        kwargs["References"] = refs
 
     resp = connect.start_task_contact(**kwargs)
     return resp["ContactId"]
 
 
 def _fetch_body_and_link(message_id):
-    """Read the raw MIME from S3; return (decoded text preview, presigned URL to a
-    browser-renderable HTML view we write to S3). The raw .eml isn't readable in a
-    browser, so we render the HTML (or wrap the text) into its own object and link
-    to that. Best-effort — never fails the routing."""
+    """Read the raw MIME from S3; return (preview, presigned HTML-view URL,
+    text_body, html_body). The raw .eml isn't readable in a browser, so we render
+    the HTML (or wrap the text) into its own object and link to that. Best-effort —
+    never fails the routing."""
     if not INBOUND_BUCKET:
-        return "", None
+        return "", None, None, None
     key = INBOUND_PREFIX + message_id
     try:
         raw = s3.get_object(Bucket=INBOUND_BUCKET, Key=key)["Body"].read()
@@ -292,10 +453,10 @@ def _fetch_body_and_link(message_id):
             Params={"Bucket": INBOUND_BUCKET, "Key": view_key},
             ExpiresIn=RAW_EMAIL_URL_TTL,
         )
-        return preview, url
+        return preview, url, plain, html
     except Exception:
         logger.exception("Could not fetch/parse body for %s", message_id)
-        return "", None
+        return "", None, None, None
 
 
 def _render_email_html(msg, html, plain):

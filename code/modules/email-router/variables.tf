@@ -80,3 +80,15 @@ variable "auto_create_case" {
   description = "When an email has no Case # and no prior owner, create a new Salesforce Case (Email-to-Case style) and route to its owner."
   default     = true
 }
+
+variable "log_email_to_salesforce" {
+  type        = bool
+  description = "Log each inbound email onto its Salesforce Case as an incoming EmailMessage (shows in case history)."
+  default     = true
+}
+
+variable "link_customer_to_contact" {
+  type        = bool
+  description = "Link cases to a Salesforce Contact/Account (matched by sender email, find-or-create) so the agent sees the customer 360 (history, open cases, account activity)."
+  default     = true
+}

@@ -105,6 +105,8 @@ resource "aws_lambda_function" "router" {
       SHARED_MAILBOXES    = var.shared_mailboxes
       CASE_ID_REGEX       = var.case_id_regex
       AUTO_CREATE_CASE    = var.auto_create_case ? "true" : "false"
+      LOG_EMAIL_TO_SF     = var.log_email_to_salesforce ? "true" : "false"
+      LINK_CONTACT        = var.link_customer_to_contact ? "true" : "false"
     }
   }
 }

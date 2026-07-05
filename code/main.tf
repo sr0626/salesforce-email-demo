@@ -83,9 +83,11 @@ module "email_router" {
   contact_flow_arn     = module.connect.contact_flow_arn
   owner_flow_map       = module.connect.owner_flow_map
 
-  shared_mailboxes = var.shared_mailboxes
-  case_id_regex    = var.case_id_regex
-  auto_create_case = var.auto_create_case
+  shared_mailboxes         = var.shared_mailboxes
+  case_id_regex            = var.case_id_regex
+  auto_create_case         = var.auto_create_case
+  log_email_to_salesforce  = var.log_email_to_salesforce
+  link_customer_to_contact = var.link_customer_to_contact
 }
 
 # No SES module — SES (domain identity, DKIM, receipt rule set/rule, activation,

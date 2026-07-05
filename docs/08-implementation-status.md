@@ -33,7 +33,7 @@ features land. Legend:
 | Auto-identify Salesforce Case IDs in threads | ✅ | Regex on subject (`Case #NNNNN`) |
 | Routing based on Salesforce Case Owner | ✅ | Live SOQL lookup → route to owner's agent |
 | Sync of ownership changes SF ↔ platform | 🟡 Partial | Live lookup per email → a *new* reply always reflects the current owner ("reflected immediately"). No re-routing of already-queued Tasks; no continuous/two-way sync. |
-| Preservation of email thread continuity | 🟡 Partial | Rendered email shows the full quoted chain; but each reply is a **new Task** (replies not threaded into one interaction). |
+| Preservation of email thread continuity | 🟡 Partial | Each inbound email is now **logged onto the Salesforce Case as an `EmailMessage`** → the full thread accumulates in case history; the rendered view also shows the quoted chain. Remaining: on the Connect side each reply is still a **new Task** (not merged into one interaction). |
 | *Success:* no manual reassignment | ✅ | |
 | *Success:* routing leverages Salesforce data | ✅ | Live Client-Credentials SOQL |
 | *Success:* ownership changes reflected immediately | ✅ | On the per-email lookup path |
@@ -74,6 +74,8 @@ Deliberate simplifications for the POC (not defects):
 | Outbound sending | SES is in the **sandbox** (receiving works; *sending* is restricted). No agent reply-send is built. | Request SES production access; build the outbound/reply path (steps 3 & 9). |
 | Rendered email view | Renders the sender's **raw HTML unsanitized** (could include remote images/scripts). Fine for an internal demo. | Sanitize HTML before rendering. |
 | Email link | The `Email`/rendered-view link is a **presigned URL that expires** (12h TTL). | Serve via an authenticated agent app instead of a presigned link. |
+| Account activity roll-up | Emails show on the **Contact** timeline (via `EmailMessageRelation`) with no config, but showing them on the **Account** timeline requires the Salesforce org setting **"Roll up activities to a contact's primary account"** (Setup → Activity Settings). `EmailMessageRelation` can't relate to an Account, so there's no code-only alternative (short of duplicating each email as an Account-`WhatId` Task). | Standard Salesforce config — enable the roll-up setting (done in this demo org). The Account's **Cases** related list shows without any setting. |
+| Salesforce Case access | The `SalesforceCase` reference is a **click-through deep link** (agent opens the case in one click). The requirement only asks that the agent "opens the interaction and sees" the context, so this meets it — auto screen-pop is **not required**, just a nicety. | *Optional enhancement:* Amazon Connect **CTI Adapter for Salesforce** (embed CCP in Salesforce) to auto-navigate to the case on Task accept via the `caseId` attribute. |
 
 ---
 
@@ -82,6 +84,8 @@ Deliberate simplifications for the POC (not defects):
 | Feature | What it adds |
 |---|---|
 | In-Task email visibility | Decoded **`bodyPreview`** attribute + an **`Email`** link to a browser-renderable HTML view — rendered with a **From/To/Date/Subject header block above the full quoted thread**, so it reads like a real email. The agent reads it without leaving Connect. An early taste of Scenario 5. |
+| Salesforce Case link (deep link) | Task carries a **`SalesforceCase`** URL → one click opens the live Case in Salesforce (its full 360). Satisfies final-exercise step 7 by reusing Salesforce's native account/case view. (Click-through link, not an auto screen-pop — see limitations.) |
+| Emails logged to the Case | Each inbound email is written to its Salesforce Case as an incoming **`EmailMessage`**, so the full email thread appears in Salesforce case **history** (toggle `log_email_to_salesforce`). |
 | Owner-targeted routing | Per-owner **queue + routing profile + contact flow + agent**; the Lambda picks the owner's flow by `OwnerId` (beyond simple attribute tagging), with a shared-queue fallback. |
 | End-to-end audit trail | Every routing decision written to the `email-routing-log` DynamoDB table (case, resolved owner, outcome, contactId, timestamp) — supports the "auditable" criterion and supervisor review. |
 | Full CMK encryption | S3, DynamoDB, Secrets Manager, and Lambda env vars all encrypted with the existing customer-managed KMS key. |
@@ -98,7 +102,7 @@ Deliberate simplifications for the POC (not defects):
 | 4 | Customer replies | ✅ | Inbound reply received |
 | 5 | Platform identifies the Salesforce Case ID | ✅ | Regex on subject |
 | 6 | Email routes to the assigned owner | ✅ | Owner-targeted routing to the owner's agent |
-| 7 | Agent opens the interaction and sees: customer history / open emails / open cases / related account activity / assigned ownership | 🟡 | Assigned ownership ✅ and email body/thread ✅ (bonus); customer history / open cases / related account activity ❌ (Scenario 5, not built) |
+| 7 | Agent opens the interaction and sees: customer history / open emails / open cases / related account activity / assigned ownership | ✅ | Via the **`SalesforceCase`** deep link + `Email`/`bodyPreview`. Cases link to a **Contact/Account** (sender email, find-or-create); each email is logged as an `EmailMessage` on the Case **and** related to the Contact (`EmailMessageRelation`). Salesforce then shows the full 360: **ownership** (Case), **open emails + case history** (Case Activity), **customer history + open cases** (Contact), and **related account activity** (Account, with the org roll-up setting on — see limitations). |
 | 8 | Agent collaborates with another employee | ⬜ | Native Connect transfer only; not built |
 | 9 | Agent sends a response | ❌ | Outbound reply from the platform not built (Scenario 4/7) |
 | 10 | Interaction is tracked, reported, and auditable | 🟡 | Audit log built (tracked/auditable); no reporting UI |

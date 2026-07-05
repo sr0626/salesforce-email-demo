@@ -87,6 +87,18 @@ variable "auto_create_case" {
   default     = true
 }
 
+variable "log_email_to_salesforce" {
+  type        = bool
+  description = "Log each inbound email onto its Salesforce Case as an incoming EmailMessage (shows in case history)."
+  default     = true
+}
+
+variable "link_customer_to_contact" {
+  type        = bool
+  description = "Link cases to a Salesforce Contact/Account (by sender email) so the agent sees the customer 360."
+  default     = true
+}
+
 ########################################
 # Connect
 ########################################

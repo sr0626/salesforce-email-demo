@@ -29,11 +29,17 @@ email, with no human triage.
      (mailbox, customer) → the last-known owner from a prior case. Outcome =
      `fallback` (or `unassigned` if never seen).
 5. **Lambda enriches:** reads the raw MIME from S3, decodes a **body preview**,
-   and generates a **presigned URL** to the full raw email.
+   renders a browser-viewable HTML version, and builds a **Salesforce Case link**.
+   (If the email is a brand-new inquiry — no case #, no history — it first
+   **creates** a Salesforce Case.) It also **links the case to a Contact/Account**
+   (matched by sender email, find-or-create) and **logs the email** onto the case
+   (+ relates it to the Contact) — so the agent gets the customer 360.
 6. **Create Connect Task** via `StartTaskContact`, routed through the **owner's
    dedicated contact flow** (picked from `OWNER_FLOW_MAP` by `OwnerId`), tagged
    with attributes `caseId`, `ownerId`, `ownerName`, `mailbox`, `fromAddress`,
-   `isSharedMailbox`, `bodyPreview`, plus a **URL reference** to the raw email.
+   `isSharedMailbox`, `bodyPreview`, plus two **URL references**: **`Email`**
+   (rendered message) and **`SalesforceCase`** (click-through deep link to the
+   live case 360).
 7. **Audit** row written to DynamoDB `email-routing-log`.
 8. **The owner's agent** receives the Task: the owner's flow targets that owner's
    queue, served only by that owner's agent (e.g. `agent.epic` /
@@ -76,8 +82,9 @@ email, with no human triage.
 2. Narrate: SES → Lambda parses the case → **live Salesforce lookup** → owner
    *OrgFarm EPIC*.
 3. Show the Task **arrive at `agent.epic`** (not the other agent). Open it: the
-   `caseId`, `ownerName`, **body preview**, and the **"Raw email (full thread)"**
-   link are all on the Task.
+   `caseId`, `ownerName`, **body preview**, the **`Email`** link (rendered
+   message), and the **`SalesforceCase`** link (click → opens the live case 360
+   in Salesforce) are all on the Task.
 
 ### Scene 2 — Different owner, different agent (Scenario 1, differentiation)
 1. Send subject `RE: Case #00001027 - shipping delay` (owned by *Sateesh*).
