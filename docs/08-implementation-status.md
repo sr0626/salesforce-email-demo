@@ -154,6 +154,7 @@ also gets a **Detail-view screen-pop** on accept with a clickable Salesforce Cas
 | 2 | Case SLA / "overdue" tracking (**TODO — revisit**) | No SLA/response-time or "overdue" tracking; Salesforce "Overdue" applies only to due-dated Activities, not our emails | Salesforce **Entitlements & Milestones** or **Case Escalation Rules / Case Age** (Setup); or a scheduled check on `email-routing-log` |
 | 3 | Duplicate-work alerts (S5) | The 360 shows related cases/emails, but no proactive "someone's already on this" alert | Flow/Lambda check on related open cases/interactions → surface a warning attribute |
 | 4 | Agent self-selection / cherry-pick (S3) | ACD push only | Add a pull/manual-select queue + supervisor governance |
+| 5 | Owner-queue unhandled email (**validated 2026-07-06**) | Reject/miss test confirmed: an unaccepted email returns to the owner's **single-agent** queue with **no fallback agent** — it waits for that owner (who is flipped to "Missed" and stops receiving new contacts until Available again). SF case logging/ownership/audit already happened in the inbound flow, so the 360 is intact regardless. | **TODO: send an ALERT** when an email sits unhandled in the owner queue past N min (supervisor notification — e.g. Connect queue-threshold rule, or EventBridge → SNS/email). **Deliberately NO overflow queue** — keeps strict owner-targeting (Scenario 1/2); the alert prompts the owner/supervisor instead of reassigning. |
 
 > Resolved: ownership-change on the no-case fallback (live re-read) and ownership
 > transfer / supervisor reassignment (via Salesforce Change Owner, honored live).
@@ -176,6 +177,19 @@ Deliberate simplifications for this round (not defects):
 | Salesforce Case access | Task path: a `SalesforceCase` reference deep link. Native email: the **Detail-view screen-pop** Case link on accept. Both are click-through (meets "agent opens the interaction and sees"). | *Optional:* CTI Adapter (Task) / Streams+Open CTI bridge (email) for literal auto-navigation. |
 
 ---
+
+## Production scaling notes
+
+Guidance for a real deployment (300–400+ agents). Not built for the demo — captured so
+the demo's simplifications aren't mistaken for the prod design.
+
+| Area | Demo (this build) | Production recommendation |
+|---|---|---|
+| **Agent-to-agent transfer / collaboration** | Per-agent **USER quick connects** (`Transfer-to-<agent>`), associated to queues. Fine for 2–3 agents. | **Does not scale** — per-agent QCs are O(N²) and give agents a 400-item list. Use **team/skill queue quick connects** (`Returns Team`, `Tier 2`, `Escalations`, `Supervisor`): ~5–10 entries, any available team member picks up, and a team queue has natural overflow. |
+| **Reach the specific Case Owner** | N/A (named QCs) | One **dynamic `Transfer to Case Owner`** quick connect whose flow invokes the routing Lambda (`caseId → OwnerId → owner's queue`) — one entry, always correct, no list to maintain as staff change. Reuses the routing brain. |
+| **Escalation** | N/A | Single `Escalate to Supervisor` queue quick connect. |
+| **Ownership vs collaboration** | — | Team queues are only the *collaboration/transfer* layer; **individual ownership stays in Salesforce** (Case Owner), so owner-targeted *routing* (Scenario 1/2) is unaffected. |
+| **Agents / queues / profiles** | Per-owner queue+profile+flow+user via a `for_each` `agents` map (docs/10) | The per-owner model still holds, but at 400 agents you'd typically group by **team/skill** for collaboration + reporting while keeping SF as the ownership source of truth. |
 
 ## Bonus features (beyond the client's ask)
 
