@@ -17,7 +17,7 @@ exercise. Update as features land. Legend:
 |---|---|---|
 | 1 | Salesforce case-based email routing | ✅ Built — all requirements met |
 | 2 | Shared mailbox with individual ownership | ✅ Built — all requirements met |
-| 3 | Hybrid routing (ACD + agent self-selection) | 🟡 Partial — ACD built; agent self-selection/cherry-pick + governance not yet ♻️ |
+| 3 | Hybrid routing (ACD + agent self-selection) | ✅ Built — ACD push (owner queues) + native Worklist cherry-pick (`Email-Case-Queue`) running together; governance via security permission. Duplicate-work *alerts* (S5) is the only remaining sub-item |
 | 4 | Outbound email tracking & visibility | 🟡 Outbound **built** on the native email channel (agent replies tracked as Connect email contacts + `email-routing-log`); dedicated outbound-only reporting views are the remaining polish |
 | 5 | Customer/account-level visibility | 🟡 Partial — customer + account 360 built; duplicate-work *alerts* not yet |
 | 6 | Complex routing using CRM data | 🟡 Partial — routing engine built (by Case Owner); extends to any CRM field via same Lambda ♻️ |
@@ -57,16 +57,35 @@ exercise. Update as features land. Legend:
 
 | Requirement | Status | Note |
 |---|---|---|
-| Traditional ACD routing | ✅ | Queues + routing profiles auto-assign (push) — owner-targeted + shared fallback |
-| Shared queue visibility | 🟡 | Supervisor/agents see queues via native real-time metrics; a dedicated agent "queue inventory" pull view isn't configured |
-| Agent self-selection of work items (cherry-pick) | 🔜 | Today's model is ACD push; a manual-select/"pull" queue can be added so agents pick work — not built |
-| Supervisor controls governing cherry-pick | 🔜 | Rides on the self-selection setup |
-| Mixed routing strategies simultaneously | 🟡 | ACD built; a per-team mix of auto + pull is the remaining delta |
-| *Success:* different departments, different models | 🟡 | ACD per team ✅; add a pull queue for cherry-pick teams |
-| *Success:* select work without duplicate effort | 🔜 | Needs self-selection + the S5 duplicate-work alerts |
-| *Success:* supervisors keep governance | 🟡 | Supervisor user + native controls ✅; cherry-pick governance not built |
+| Traditional ACD routing | ✅ | Queues + routing profiles auto-assign (push) — owner-targeted queues |
+| Shared queue visibility | ✅ | The native **Worklist app** shows all agents the queued items in `Email-Case-Queue`; + supervisor real-time metrics |
+| Agent self-selection of work items (cherry-pick) | ✅ | **Native manual assignment (Sept-2025)** — `Email-Case-Queue` set to *Manual assignment* on all three agents' routing profiles; agents open the **Worklist** and **"Assign to me"** (validated 2026-07-06). Push (owner queues) and pull (`Email-Case-Queue`) run **simultaneously**. |
+| Supervisor controls governing cherry-pick | ✅ | Governance = the **security-profile permission** "Allow 'Assign to me' for any/my contact" (Contact actions group) — grant/deny who can self-select. *(Per-item supervisor "assign to agent X" is NOT native — see limitations.)* |
+| Mixed routing strategies simultaneously | ✅ | Owner queues = auto/push; `Email-Case-Queue` = manual/pull — both active at once |
+| *Success:* different departments, different models | ✅ | Push per owner + pull via the Worklist |
+| *Success:* select work without duplicate effort | 🟡 | Worklist gives shared visibility (agents see the same list); proactive duplicate-work *alerts* are still the S5 gap |
+| *Success:* supervisors keep governance | ✅ | Permission-based (who may self-assign) + supervisor user/dashboards |
 
-♻️ Reuses this round's queue/routing-profile plumbing — the delta is a pull/manual-select queue.
+♻️ Built on this round's queue/routing-profile plumbing — `Email-Case-Queue` (the fallback) doubles as the cherry-pick pool; no auto-routing on it now.
+
+> **Console-only config (not in Terraform):** the routing-profile **Manual assignment**
+> section and the **security-profile permission** are set in the console. Verified the
+> AWS provider (`aws_connect_routing_profile`) only manages `media_concurrencies` +
+> `queue_configs` — it has **no** manual-assignment field — so `terraform apply` won't
+> revert it, but it also can't reproduce it. Re-do these in the console on a rebuild:
+> (1) `Email-Case-Queue` → *Manual assignment* (Email) on `Email-Routing-Profile`,
+> `Owner-epic-Profile`, `Owner-sateesh-Profile`; (2) *Allow 'Assign to me' for any
+> contact* (Contact actions) on the **Agent** security profile.
+
+**Cherry-pick ownership semantics (important):** the Worklist "Assign to me" (and a
+supervisor self-assign+transfer) is a **contact-handling** action — it assigns the
+*contact* to an agent in Connect but does **NOT** change the **Salesforce Case Owner**
+or the **DynamoDB ownership** row. Salesforce stays the single source of truth for
+ownership. So a picked-up *unassigned* email leaves no ownership trail — a later
+no-`Case#` reply from that customer would auto-create (Run-As user), not route back to
+the picker. To make the picker the durable owner, they do **Change Owner in Salesforce**
+(manual today). Who handled it is captured in **Connect contact search**, not
+`email-routing-log`.
 
 ## Scenario 4 — Outbound Email Tracking and Visibility
 
@@ -154,7 +173,9 @@ also gets a **Detail-view screen-pop** on accept with a clickable Salesforce Cas
 | 2 | Case SLA / "overdue" tracking (**TODO — revisit**) | No SLA/response-time or "overdue" tracking; Salesforce "Overdue" applies only to due-dated Activities, not our emails | Salesforce **Entitlements & Milestones** or **Case Escalation Rules / Case Age** (Setup); or a scheduled check on `email-routing-log` |
 | 3 | Duplicate-work alerts (S5) | The 360 shows related cases/emails, but no proactive "someone's already on this" alert | Flow/Lambda check on related open cases/interactions → surface a warning attribute |
 | 4 | Agent self-selection / cherry-pick (S3) | ACD push only | Add a pull/manual-select queue + supervisor governance |
-| 5 | Owner-queue unhandled email (**validated 2026-07-06**) | Reject/miss test confirmed: an unaccepted email returns to the owner's **single-agent** queue with **no fallback agent** — it waits for that owner (who is flipped to "Missed" and stops receiving new contacts until Available again). SF case logging/ownership/audit already happened in the inbound flow, so the 360 is intact regardless. | **TODO: send an ALERT** when an email sits unhandled in the owner queue past N min (supervisor notification — e.g. Connect queue-threshold rule, or EventBridge → SNS/email). **Deliberately NO overflow queue** — keeps strict owner-targeting (Scenario 1/2); the alert prompts the owner/supervisor instead of reassigning. |
+| 5 | Owner-queue unhandled email (**validated 2026-07-06**) | Reject/miss test confirmed: an unaccepted email returns to the owner's **single-agent** queue with **no fallback agent** — it waits for that owner (who is flipped to "Missed" and stops receiving new contacts until Available again). SF case logging/ownership/audit already happened in the inbound flow, so the 360 is intact regardless. | **TODO: send an ALERT** when an email sits unhandled in the owner queue past N min (supervisor notification — e.g. Connect queue-threshold rule, or EventBridge → SNS/email). **Deliberately NO overflow queue** — keeps strict owner-targeting (Scenario 1/2); the alert prompts the owner/supervisor instead of reassigning. **Optional variant TODO:** instead of/alongside the alert, **spill the unpicked owner email into `Email-Case-Queue`** after N min so it becomes cherry-pickable in the Worklist (turns the timeout into a manual-pull escalation). |
+| 6 | Cherry-pick self-assign doesn't set ownership (S3) | Worklist "Assign to me" / supervisor self-assign+transfer assigns the *contact* in Connect but does **not** update the Salesforce Case Owner or DynamoDB ownership → the picker isn't the durable owner; a later no-`Case#` reply won't route back to them. | **TODO:** on self-assign, update the **SF Case Owner** (Change Owner) + write the **DynamoDB ownership** row (e.g. a flow/EventBridge hook on contact-assigned → Lambda). Manual workaround today: agent does Change Owner in Salesforce after pickup. |
+| 7 | No native supervisor per-item assign (S3) | The Worklist is agent self-assign only; a supervisor cannot natively "assign this queued contact to agent X". | Workaround: supervisor **Assign to me → transfer** to the agent via quick connect; or a **custom API** tool (Connect API) for direct supervisor assignment. |
 
 > Resolved: ownership-change on the no-case fallback (live re-read) and ownership
 > transfer / supervisor reassignment (via Salesforce Change Owner, honored live).

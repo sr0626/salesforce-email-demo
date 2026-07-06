@@ -20,5 +20,8 @@
 # Scratch
 *.log
 
+# Office temp/lock files (e.g. Excel open-file lock)
+~$*
+
 # Client requirements source (confidential — keep out of the repo)
 reqs/
