@@ -44,6 +44,17 @@ locals {
       Resource = var.kms_key_arn
     },
   ] : []
+
+  # Flow mode (native email): read the message body Connect stored in its
+  # EMAIL_MESSAGES bucket (Fix B). Only added when the bucket is configured.
+  connect_email_statements = var.connect_email_bucket_arn != "" ? [
+    {
+      Sid      = "ReadConnectEmailMessages"
+      Effect   = "Allow"
+      Action   = ["s3:GetObject", "s3:ListBucket"]
+      Resource = [var.connect_email_bucket_arn, "${var.connect_email_bucket_arn}/*"]
+    },
+  ] : []
 }
 
 data "archive_file" "lambda" {
@@ -75,7 +86,7 @@ resource "aws_iam_role_policy" "access" {
   role = aws_iam_role.lambda.id
   policy = jsonencode({
     Version   = "2012-10-17"
-    Statement = concat(local.base_statements, local.kms_statements)
+    Statement = concat(local.base_statements, local.kms_statements, local.connect_email_statements)
   })
 }
 
@@ -103,6 +114,10 @@ resource "aws_lambda_function" "router" {
       CONNECT_INSTANCE_ID = var.connect_instance_id
       TASK_FLOW_ARN       = var.contact_flow_arn
       OWNER_FLOW_MAP      = jsonencode(var.owner_flow_map)
+      OWNER_QUEUE_MAP     = jsonencode(var.owner_queue_map)
+      FALLBACK_QUEUE_ARN  = var.fallback_queue_arn
+      CONNECT_EMAIL_BUCKET = var.connect_email_bucket_name
+      CONNECT_EMAIL_PREFIX = var.connect_email_prefix
       SHARED_MAILBOXES    = var.shared_mailboxes
       CASE_ID_REGEX       = var.case_id_regex
       AUTO_CREATE_CASE    = var.auto_create_case ? "true" : "false"

@@ -1,7 +1,37 @@
 # Outbound reply via Amazon Connect native email channel — plan (steps 3 & 9)
 
-**Status:** PLAN — **build-ready** (open questions resolved 2026-07-05; see the
-"Build checklist" near the end). Not built yet. Decision rationale below.
+**Status:** PLAN — **build-ready**. Native-email **plumbing proven** 2026-07-05 on a
+test address (`support@ccaas.evolvity.com`): inbound → agent read → agent reply →
+customer received. That test had **no Salesforce owner-routing** behind it and was
+**not** on `ordersuccess@` — so steps 3 & 9 are **not** done yet (docs/08 still lists
+them 🔜, correctly). What remains is wiring the routing brain into an inbound *email*
+flow and cutting `ordersuccess@` over. Decisions locked 2026-07-05 below.
+
+## Decisions locked (2026-07-05)
+- **Hybrid, not full retire.** Keep the proven **task-based** path live on a
+  **separate address** and stand up **native email on `ordersuccess@`**. Lower risk,
+  easy rollback, and lets the demo show both. (Full cutover was considered and
+  deferred.)
+  - `ordersuccess@ccaas.evolvity.com` → **Connect native email** (real email contact;
+    agent replies natively → steps 3 & 9). *This is the reqs-faithful demo.*
+  - `taskdemo@ccaas.evolvity.com` → **existing Task path** (our custom SES rule → S3 +
+    Lambda → `StartTaskContact`), unchanged.
+- **SF Case reaches the agent via a workspace view/link — NOT a CTI screen-pop.**
+  Verified 2026-07-05: the Amazon Connect **Salesforce CTI Adapter does not bridge the
+  native email channel** (it covers voice/chat/task only — its "email" is Salesforce
+  Omni-Channel presence, not a Connect email contact). So there is **no turnkey
+  auto-navigation** into the Case for a native-email contact. That's acceptable: the
+  Final Exercise requires the agent to *"open the interaction and **see**"* the 360 —
+  satisfied by a contact-attribute-driven **agent-workspace view/guide** showing the
+  Case deep link + owner + related cases (one click to the live Case). User confirmed
+  a workspace link is good enough for this demo; literal auto-pop is a later
+  enhancement (custom Streams + Open CTI bridge) if ever needed.
+- **Why native email for the reply (not Salesforce):** Scenario 1's *"initiated from
+  Salesforce"* governs the **thread origin** (the proactive first email that stamps the
+  `Case #`), **not** the agent's reply to a customer response — which is what we're
+  building. The reply belongs on the platform being evaluated (Connect), and native
+  email is the only option that records **outbound as a first-class Connect
+  interaction** (Scenario 4).
 
 ## Why Connect (not Salesforce) for the reply
 Final-exercise steps **3 ("agent responds from a shared mailbox")** and **9
@@ -40,12 +70,19 @@ Customer email → SES (ccaas.evolvity.com, already verified)
   from the Lambda's `targetQueueId`).
 - The **agents** and security profiles.
 
-## What we RETIRE / simplify
-- Our **SES receipt rule → Lambda → `StartTaskContact`** inbound path (replaced by
-  Connect's email ingestion via `StartEmailContact`).
-- **S3 rendered-HTML view + `bodyPreview`** — Connect shows the email natively, so
-  the custom email view is no longer needed (S3 raw store optional for audit).
-- Email = a real **email contact**, not a Task.
+## What we ADD (for `ordersuccess@`) / simplify
+- **Agent-workspace view** surfacing the SF Case deep link + owner + related cases
+  from the Lambda-set contact attributes (the "opens and sees the 360" mechanism,
+  since there's no native-email CTI screen-pop — see Decisions above).
+- **S3 rendered-HTML view + `bodyPreview` not needed on the native-email path** —
+  Connect shows the email natively. (These stay in use on the `taskdemo@` Task path.)
+- For `ordersuccess@`, email = a real **email contact**, not a Task.
+
+## What we DO NOT retire (hybrid)
+- The **SES receipt rule → Lambda → `StartTaskContact`** path is **kept**, just
+  **re-scoped** from `ordersuccess@` to **`taskdemo@ccaas.evolvity.com`**. Native
+  email (`StartEmailContact`) handles `ordersuccess@`; the two never collide because
+  SES receipt rules match by **recipient** (see SES wiring below).
 
 ## Setup steps (to build later)
 1. **Enable email** on the Connect instance → auto address + up to 5 custom
@@ -71,11 +108,16 @@ Customer email → SES (ccaas.evolvity.com, already verified)
   deliverability.
 
 ## Effort / risks
-- **Significant re-architecture** of the email path (biggest change so far).
+- **Hybrid keeps the blast radius small** — the Task path stays intact on `taskdemo@`;
+  we add native email on `ordersuccess@` alongside it (rollback = just point
+  `ordersuccess@` back at the custom rule).
 - Email channel is a **2024+ feature** — verify exact console/Terraform support
   (provider coverage for email addresses/flows may lag; some steps may be manual).
 - One active SES receipt rule set per region — Connect email manages its own; our
-  custom rule must be reconciled/removed for `ordersuccess@`.
+  custom rule is **re-scoped** (`ordersuccess@` → `taskdemo@`), not removed. Watch for
+  Connect re-sync dropping custom rules (re-add if the Task path stops).
+- **No native-email CTI screen-pop** — the SF Case is a workspace link/view, not an
+  auto-navigation (accepted; see Decisions).
 - Confirm **Amazon Q in Connect** email-drafting availability before promising the
   AI angle.
 
@@ -86,8 +128,9 @@ Hybrid — like SES, some pieces are not in Terraform:
 
 | Piece | IaC support | How we'll do it |
 |---|---|---|
-| Enable email on the instance | Not a documented `aws_connect_instance` arg | **Console/API** |
-| **Email address** (`ordersuccess@…`) | **No Terraform resource**; CloudFormation **`AWS::Connect::EmailAddress`** exists; API `CreateEmailAddress` | **Console** (or a tiny CFN stack / SDK) — not Terraform |
+| Enable email on the instance (Manage email → Add Domain) | Domain add via console; domain itself is the SES-verified identity | **Console** (one-time) |
+| **Email data storage** (S3 for message bodies/attachments) | **Terraform** `aws_connect_instance_storage_config` (resource_type `EMAIL_MESSAGES`) | **Terraform** ✅ |
+| **Email address** (`ordersuccess@…`) | **Terraform** `aws_connect_email_address` (confirm provider version) — or CFN `AWS::Connect::EmailAddress` | **Terraform** (verify version); CFN/console fallback |
 | Inbound/outbound **email flows** | `aws_connect_contact_flow` takes arbitrary flow JSON | Author in **console → export JSON → Terraform** (same approach we used for the task flow; email-specific blocks like *Send message* / *Check contact attributes* need verified JSON) |
 | **Queue** email config (default From, outbound flow) | Partial — verify `aws_connect_queue` email fields in the current provider | Terraform if supported, else console |
 | **Routing profile** email channel + max contacts | Likely Terraform (media concurrency) | Terraform (verify EMAIL channel enum) |
@@ -101,8 +144,29 @@ Inbound **email contact flow**: **Check contact attributes** (Email Subject) →
 ### 3. S3 archival / rendered view — decision
 **Drop** the S3 rendered-HTML view + `bodyPreview` — Connect shows the email natively. Keep the **Salesforce `EmailMessage`** logging as the system-of-record trail (and optionally keep raw S3 archival for audit; not required).
 
-### 4. SES wiring
-Connect email uses the **`AmazonConnectEnabledRuleSet-DO-NOT-DELETE`** receipt rule set (SES → `StartEmailContact`). Our current custom rule (`route-to-email-router` → our Lambda) for `ordersuccess@` must be **removed/replaced** so Connect ingests. Domain `ccaas.evolvity.com` is already SES-verified → usable for the Connect email address.
+### 4. SES wiring (hybrid — both paths in one active rule set)
+Only **one active SES receipt rule set per region**; Connect owns
+**`AmazonConnectEnabledRuleSet-DO-NOT-DELETE`**. Receipt rules match by **recipient**,
+so both paths coexist inside that one set:
+- `ordersuccess@ccaas.evolvity.com` → Connect's rule → `StartEmailContact` (native email).
+- `taskdemo@ccaas.evolvity.com` → our custom rule (`route-to-email-router` → S3 + Lambda → Task).
+
+**Critical:** our custom rule is currently scoped to `ordersuccess@` — **re-scope its
+recipient condition to `taskdemo@`** so it no longer matches `ordersuccess@` (otherwise
+a double-match makes routing order-dependent). Domain `ccaas.evolvity.com` is SES-verified
+and receives **any** local-part → `taskdemo@` needs no new DNS/verification. Known gotcha:
+a Connect email re-sync can drop custom rules from this set — re-add if the task path
+stops (see the SES receipt-rule note in project memory).
+
+### 4b. Email-messages S3 bucket + CORS (done)
+Connect's native-email **EMAIL_MESSAGES** data storage uses the console-created bucket
+**`salesforce-email-demo-email-storage`** (separate from the TF-managed SES inbound
+bucket `…-inbound-email-…`). The agent workspace fetches email bodies from it in-browser,
+so it **requires a CORS policy** — without it the workspace shows *"Failed to get email
+message … CORS policy on your S3 bucket is invalid."* **Fixed 2026-07-05:** CORS added
+allowing origin `https://salesforce-email-demo.my.connect.aws` (scheme+host only, no
+trailing slash). Codified (staged) as `aws_s3_bucket_cors_configuration.email_messages`
+in `code/connect-email.tf`; import the console bucket on cutover.
 
 ### 5. Amazon Q in Connect (AI compose, future)
 Plugs into the same agent workspace (generative response recommendations). **Verify email-drafting availability** before promising; not part of the initial build.
@@ -110,14 +174,71 @@ Plugs into the same agent workspace (generative response recommendations). **Ver
 ---
 
 ## Build checklist (ready to execute when we resume)
-1. **Console:** enable email on the instance; create address `ordersuccess@ccaas.evolvity.com` (verified domain); **retire our custom SES receipt rule** for that recipient.
-2. **Lambda:** add a "flow mode" entry that returns the routing decision (reuse owner lookup / reassign re-verify / SF 360 / email logging). Keep DynamoDB.
-3. **Inbound email flow:** Check attributes (Subject) → Invoke Lambda → Set working queue (dynamic) → route. (Author in console, export JSON to Terraform.)
-4. **Queue/routing profile:** outbound email config (default From, outbound flow) + enable EMAIL channel + max contacts.
-5. **Console:** grant agents **"Initiate email conversations."**
-6. **Templates** (signature / quick responses).
-7. **SPF** TXT on `ccaas`: `v=spf1 include:amazonses.com ~all`.
-8. **Test** the round trip: inbound → agent reads → replies → customer receives → reply loops back to owner.
+1. **SES address split (hybrid):** re-scope our custom receipt rule from `ordersuccess@`
+   → **`taskdemo@ccaas.evolvity.com`** (keeps the Task demo working). Add
+   `ordersuccess@ccaas.evolvity.com` to the Connect email channel so its rule ingests
+   via `StartEmailContact`. Confirm no rule double-matches `ordersuccess@`.
+2. **Console:** enable email on the instance; create address `ordersuccess@ccaas.evolvity.com`
+   (verified domain). EMAIL_MESSAGES storage → bucket `salesforce-email-demo-email-storage`
+   (CORS already applied ✅).
+3. **Lambda:** add a "flow mode" entry that returns the routing decision (reuse owner
+   lookup / reassign re-verify / SF 360 / email logging). Keep DynamoDB.
+4. **Inbound email flow:** Check attributes (Subject) → Invoke Lambda → Set working queue
+   (dynamic) → route. (Author in console, export JSON to Terraform.)
+5. **Agent-workspace view:** surface the Lambda-set contact attributes (SF Case deep
+   link + owner + related cases) as the agent's "sees the 360" panel (no CTI screen-pop —
+   see Decisions). Author as a Connect view/guide.
+6. **Queue/routing profile:** outbound email config (default From = `ordersuccess@…`,
+   outbound flow) + enable EMAIL channel + max contacts.
+7. **Console:** grant agents **"Initiate email conversations."**
+8. **Templates** (signature / quick responses).
+9. **SPF** TXT on `ccaas`: `v=spf1 include:amazonses.com ~all`.
+10. **Test** the round trip on `ordersuccess@`: inbound → routed to owner's agent →
+    agent reads + sees SF Case in workspace → replies → customer receives → reply loops
+    back to the current owner. Confirm `taskdemo@` still creates Tasks.
+
+## Cutover runbook (execute in order)
+
+**Code — DONE (2026-07-05, staged in the working tree, not yet applied):**
+- Lambda **flow mode** added: `handler` now dispatches SES event → Task path,
+  Connect flow event → returns the routing decision. Shared `_resolve_routing` core;
+  new `connect_flow.build_response`. Endpoints normalized with `parseaddr` so the
+  ownership key matches the SES path. Smoke-tested (stubbed): Case# → owner queue,
+  unmapped owner → fallback queue, SES mode intact. `terraform validate` clean.
+- New Lambda env: `OWNER_QUEUE_MAP` (ownerId→queueArn), `FALLBACK_QUEUE_ARN`. Root
+  vars `owner_queue_map` / `fallback_queue_arn` (default empty) → set in tfvars once
+  the native-email queues exist.
+
+**Console / AWS / DNS — YOUR steps (Claude won't run these):**
+1. **SES address split.** Edit our custom receipt rule: change recipient
+   `ordersuccess@` → **`taskdemo@ccaas.evolvity.com`**. Confirm no rule still matches
+   `ordersuccess@` except Connect's. In **tfvars** set
+   `shared_mailboxes = "ordersuccess@ccaas.evolvity.com,taskdemo@ccaas.evolvity.com"`
+   so both are treated as shared, then `apply`.
+2. **Connect Manage email.** Domain `ccaas.evolvity.com` already added → create
+   address **`ordersuccess@ccaas.evolvity.com`**; bind it to the inbound email flow
+   (step 4). EMAIL_MESSAGES storage bucket CORS already applied ✅.
+3. **Apply Terraform** — ships the flow-mode Lambda (in-place update) **and** creates
+   `aws_connect_lambda_function_association.email_router`, which associates the Lambda
+   with the Connect instance so flows may invoke it (codified, not a console click).
+4. **Inbound email flow** (flow designer, email-capable):
+   `Entry → Set contact attributes (capture the email Subject into attribute
+   'emailSubject') → Invoke AWS Lambda (email-case-router-lambda; pass Parameter
+   emailSubject = the captured subject) → Set contact attributes from $.External
+   (ownerName, caseId, salesforceCaseUrl) → Set working queue = $.External.targetQueueArn
+   (if empty, branch to a default queue) → Transfer to queue`. Export JSON →
+   `flows/email-inbound.json` → wire `aws_connect_contact_flow.email_inbound`.
+   *(The Lambda also reads CustomerEndpoint/SystemEndpoint automatically, so passing
+   fromAddress/mailbox as Parameters is optional.)*
+5. **Agent-workspace view** showing `$.External.salesforceCaseUrl` as a Case link +
+   `ownerName`/`caseId` (the "opens and sees the 360" panel).
+6. **Queue + routing profile:** owner queues get outbound email config (default From =
+   `ordersuccess@…`, outbound flow); enable the **EMAIL** channel on the owners'
+   routing profiles. Put the queue ARNs in tfvars `owner_queue_map` /
+   `fallback_queue_arn` → `apply`.
+7. **Security profile:** grant agents **"Initiate email conversations."**
+8. **SPF** TXT on `ccaas`: `v=spf1 include:amazonses.com ~all`.
+9. **Test** `ordersuccess@` round trip + confirm `taskdemo@` still creates Tasks.
 
 ## What we keep from the task-based build (snapshot: branch `backup/task-based-architecture`)
 Salesforce Lambda logic (owner lookup/create/360/logging/reassign re-verify),

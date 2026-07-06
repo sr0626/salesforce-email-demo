@@ -27,6 +27,12 @@ variable "task_concurrency" {
   default     = 5
 }
 
+variable "email_concurrency" {
+  type        = number
+  description = "Per-agent concurrent native-EMAIL capacity on the routing profile."
+  default     = 5
+}
+
 variable "hours_timezone" {
   type        = string
   description = "Time zone for the 24x7 hours-of-operation resource."

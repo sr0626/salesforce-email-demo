@@ -88,12 +88,30 @@ module "email_router" {
   connect_instance_arn = module.connect.instance_arn
   contact_flow_arn     = module.connect.contact_flow_arn
   owner_flow_map       = module.connect.owner_flow_map
+  # Native-email flow mode: auto-derived from the same agents map as owner_flow_map,
+  # so adding/removing an agent needs no extra wiring. Fallback = the shared queue.
+  owner_queue_map      = module.connect.owner_queue_map
+  fallback_queue_arn   = module.connect.queue_arn
+
+  # Native-email body fetch (Fix B): console-created EMAIL_MESSAGES bucket. ARN is
+  # derived from the name (bucket isn't TF-managed). Prefix set once confirmed.
+  connect_email_bucket_name = var.connect_email_bucket_name
+  connect_email_bucket_arn  = var.connect_email_bucket_name != "" ? "arn:aws:s3:::${var.connect_email_bucket_name}" : ""
+  connect_email_prefix      = var.connect_email_prefix
 
   shared_mailboxes         = var.shared_mailboxes
   case_id_regex            = var.case_id_regex
   auto_create_case         = var.auto_create_case
   log_email_to_salesforce  = var.log_email_to_salesforce
   link_customer_to_contact = var.link_customer_to_contact
+}
+
+# Associate the router Lambda with the Connect instance so contact flows may
+# invoke it. Required by the inbound EMAIL flow (flow mode) and harmless to the
+# Task path. Codified instead of the console "Flows -> AWS Lambda -> Add" click.
+resource "aws_connect_lambda_function_association" "email_router" {
+  instance_id  = module.connect.instance_id
+  function_arn = module.email_router.lambda_arn
 }
 
 # No SES module — SES (domain identity, DKIM, receipt rule set/rule, activation,

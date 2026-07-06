@@ -47,6 +47,8 @@ resource "aws_connect_queue" "email" {
   description           = "Shared queue for Salesforce-case email Tasks — agents see ownerName/caseId attributes on each task"
   hours_of_operation_id = aws_connect_hours_of_operation.always_open.hours_of_operation_id
   max_contacts          = var.queue_max_contacts
+  # NOTE: quick-connect→queue association is a CONSOLE step (see the owner queue
+  # note above and docs/10) — inline here would create a TF dependency cycle.
 }
 
 # Routing profile — TASK only
@@ -60,9 +62,21 @@ resource "aws_connect_routing_profile" "email" {
     channel     = "TASK"
     concurrency = var.task_concurrency
   }
+  # Native email channel (hybrid): lets shared-profile agents (demo.agent,
+  # supervisor) also receive native email contacts as a fallback.
+  media_concurrencies {
+    channel     = "EMAIL"
+    concurrency = var.email_concurrency
+  }
 
   queue_configs {
     channel  = "TASK"
+    delay    = 0
+    priority = 1
+    queue_id = aws_connect_queue.email.queue_id
+  }
+  queue_configs {
+    channel  = "EMAIL"
     delay    = 0
     priority = 1
     queue_id = aws_connect_queue.email.queue_id
@@ -115,6 +129,9 @@ resource "aws_connect_queue" "owner" {
   description           = "Owner-targeted queue for SF owner ${each.value.salesforce_owner_id} (${each.value.first_name} ${each.value.last_name})"
   hours_of_operation_id = aws_connect_hours_of_operation.always_open.hours_of_operation_id
   max_contacts          = var.queue_max_contacts
+  # NOTE: quick-connect→queue association (for agent-to-agent transfer) is a CONSOLE
+  # step, not set here: doing it inline creates a TF dependency cycle
+  # (queue → quick_connect → user → routing_profile → queue). See docs/10.
 }
 
 resource "aws_connect_routing_profile" "owner" {
@@ -128,9 +145,20 @@ resource "aws_connect_routing_profile" "owner" {
     channel     = "TASK"
     concurrency = var.task_concurrency
   }
+  # Native email channel — routes native email contacts to this owner's agent.
+  media_concurrencies {
+    channel     = "EMAIL"
+    concurrency = var.email_concurrency
+  }
 
   queue_configs {
     channel  = "TASK"
+    delay    = 0
+    priority = 1
+    queue_id = aws_connect_queue.owner[each.key].queue_id
+  }
+  queue_configs {
+    channel  = "EMAIL"
     delay    = 0
     priority = 1
     queue_id = aws_connect_queue.owner[each.key].queue_id

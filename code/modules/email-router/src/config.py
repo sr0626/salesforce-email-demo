@@ -32,6 +32,11 @@ SHARED_MAILBOXES = set(
     a.strip().lower() for a in os.environ["SHARED_MAILBOXES"].split(",") if a.strip()
 )
 OWNER_FLOW_MAP = json.loads(os.environ.get("OWNER_FLOW_MAP", "{}"))
+# Flow mode (native email): ownerId -> Connect queue ARN, plus a shared fallback.
+# Empty until the native-email queues are wired (console/Terraform) — an empty
+# targetQueueArn lets the inbound email flow branch to a default queue.
+OWNER_QUEUE_MAP = json.loads(os.environ.get("OWNER_QUEUE_MAP", "{}"))
+FALLBACK_QUEUE_ARN = os.environ.get("FALLBACK_QUEUE_ARN", "")
 CONNECT_INSTANCE_ID = os.environ["CONNECT_INSTANCE_ID"]
 TASK_FLOW_ARN = os.environ["TASK_FLOW_ARN"]
 
@@ -45,6 +50,14 @@ LINK_CONTACT = os.environ.get("LINK_CONTACT", "true").lower() == "true"
 # --- S3 email view ---
 INBOUND_BUCKET = os.environ.get("INBOUND_BUCKET", "")
 INBOUND_PREFIX = os.environ.get("INBOUND_PREFIX", "inbound/")
+
+# Native-email (flow mode, Fix B): where Connect stores the email body.
+CONNECT_EMAIL_BUCKET = os.environ.get("CONNECT_EMAIL_BUCKET", "")
+CONNECT_EMAIL_PREFIX = os.environ.get("CONNECT_EMAIL_PREFIX", "")
+
+# When true, flow mode logs the full Connect event (verbose; includes PII). Off by
+# default — set FLOW_DEBUG=true on the Lambda to troubleshoot payload shape.
+FLOW_DEBUG = os.environ.get("FLOW_DEBUG", "false").lower() == "true"
 RENDERED_PREFIX = os.environ.get("RENDERED_PREFIX", "rendered/")
 BODY_PREVIEW_CHARS = int(os.environ.get("BODY_PREVIEW_CHARS", "2000"))
 RAW_EMAIL_URL_TTL = int(os.environ.get("RAW_EMAIL_URL_TTL", "43200"))  # 12h

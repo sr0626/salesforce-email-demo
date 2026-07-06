@@ -59,6 +59,18 @@ variable "inbound_object_prefix" {
   default     = "inbound/"
 }
 
+variable "connect_email_bucket_name" {
+  type        = string
+  description = "Native-email (Fix B): the console-created S3 bucket where Connect stores EMAIL_MESSAGES bodies. The Lambda reads message bodies from here to log them on the SF Case. Empty disables body fetch (subject+metadata only)."
+  default     = "salesforce-email-demo-email-storage"
+}
+
+variable "connect_email_prefix" {
+  type        = string
+  description = "S3 key prefix under which Connect writes EMAIL_MESSAGES objects (confirmed from a real object key). The Lambda lists <prefix>/YYYY/MM/DD/ and matches the contact id in the filename."
+  default     = "connect/salesforce-email-demo/EmailMessages"
+}
+
 ########################################
 # Salesforce
 ########################################

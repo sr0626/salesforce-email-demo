@@ -165,9 +165,11 @@ Deliberate simplifications for this round (not defects):
 | Area | Limitation | To make it production-realistic |
 |---|---|---|
 | Auto-created case ownership | A new auto-created Case is owned by the **REST API caller** (the Client Credentials **Run As** user), **not** round-robin / assignment rules (**not configured this round**). | Create Case Assignment Rules in Salesforce and send the `Sforce-Auto-Assign: true` header on Case create. |
-| Outbound sending | SES production access granted; the agent reply-send path itself isn't built yet. | Build the outbound path (steps 3 & 9) — Connect native email channel (docs/09). |
-| Outbound deliverability | **TODO:** no SPF record for the `ccaas` subdomain yet. | When building outbound, add SPF TXT on `ccaas`: `v=spf1 include:amazonses.com ~all` (via Cloudflare/Server Sea). |
+| Outbound sending | SES production access granted; native-email reply **plumbing proven** on test address `support@` (2026-07-05). The owner-routed `ordersuccess@` build isn't done yet. | Build the outbound path (steps 3 & 9) — Connect native email channel, hybrid split with `taskdemo@` (docs/09). |
+| Native-email screen-pop | The Salesforce **CTI Adapter does not bridge Connect's native email channel** (voice/chat/task only), so there's **no auto-navigation** to the Case for an email contact. | Agent gets the Case via a workspace **link/view** (meets "opens and sees the 360"). Literal auto-pop = optional custom Streams + Open CTI bridge. |
+| Outbound deliverability | Round-trip verified externally (2026-07-06): reply delivered to inbox, **SPF PASS + DKIM PASS (aligned) on `ccaas.evolvity.com`**. SPF TXT (`v=spf1 include:amazonses.com ~all`) filed with Server Sea. **DMARC deferred (TODO):** currently FAIL only because no DMARC record is published — publish `_dmarc.ccaas.evolvity.com` TXT `v=DMARC1; p=none; adkim=r; aspf=r; fo=1` (scoped to the subdomain; DKIM already aligns so it flips to PASS). | Publish the DMARC record; optionally tighten `p=none`→`quarantine`/`reject` later. |
 | Rendered email view | Renders the sender's **raw HTML unsanitized**. Fine for an internal demo. | Sanitize HTML before rendering. |
+| Native-email attachments/inline images on the SF Case | The native-email → SF `EmailMessage` logs the **HTML body only**. Inline images (`cid:`) and file **attachments** don't appear on the Case (they render fine in the Connect agent workspace). **TODO.** | Fetch attachment objects from Connect's EMAIL_MESSAGES storage → upload to Salesforce as `ContentVersion`/`Attachment` and relate to the `EmailMessage`/Case. |
 | Email link | The `Email`/rendered-view link is a **presigned URL that expires** (12h TTL). | Serve via an authenticated agent app instead of a presigned link. |
 | Account activity roll-up | Emails show on the **Contact** timeline (via `EmailMessageRelation`) with no config; showing them on the **Account** timeline needs the org setting **"Roll up activities to a contact's primary account."** | Standard Salesforce config — enabled in this demo org. Account **Cases** related list shows without any setting. |
 | Salesforce Case access | The `SalesforceCase` reference is a **click-through deep link** (meets "agent opens the interaction and sees" — auto screen-pop is not required). | *Optional:* Amazon Connect **CTI Adapter for Salesforce** to auto-navigate on Task accept. |
@@ -193,12 +195,12 @@ Deliberate simplifications for this round (not defects):
 |---|---|---|---|
 | 1 | Customer sends an inquiry | ✅ | Inbound email received by SES |
 | 2 | Salesforce case is created or identified | ✅ | Identified via `Case #`; a new inquiry auto-**creates** a Case and routes to its owner |
-| 3 | Agent responds from a shared mailbox | 🔜 | Outbound via Connect native email channel — [09-outbound-connect-email-plan.md](09-outbound-connect-email-plan.md) (build-ready) |
+| 3 | Agent responds from a shared mailbox | 🔜 | Outbound via Connect native email channel — [09](09-outbound-connect-email-plan.md). **Plumbing proven** 2026-07-05 on test address `support@` (inbound→agent reply→delivered); still to do: wire the routing brain into an inbound *email* flow + cut `ordersuccess@` over. Approach locked: **hybrid** (`ordersuccess@`=native email, `taskdemo@`=Task path), SF Case via workspace **link/view** (no CTI screen-pop for native email). |
 | 4 | Customer replies | ✅ | Inbound reply received |
 | 5 | Platform identifies the Salesforce Case ID | ✅ | Regex on subject |
 | 6 | Email routes to the assigned owner | ✅ | Owner-targeted routing to the owner's agent |
 | 7 | Agent opens the interaction and sees the customer 360 | ✅ | `SalesforceCase` + `Email`/`bodyPreview`; Case linked to Contact/Account; emails logged + related → ownership, open emails, history, open cases, related account activity |
 | 8 | Agent collaborates with another employee | ✅ | USER quick connects (`Transfer-to-<agent>`) → native transfer/consult (associate to queue in console) |
-| 9 | Agent sends a response | 🔜 | Same as step 3 — Connect native email channel (docs/09) |
+| 9 | Agent sends a response | 🔜 | Same as step 3 — Connect native email channel (docs/09); native reply-send plumbing proven on `support@` 2026-07-05 |
 | 10 | Interaction is tracked, reported, and auditable | ✅ | Native Connect dashboards + contact search + `email-routing-log` |
 | 11 | Supervisors review routing/ownership/metrics | ✅ | Supervisor user (`demo.supervisor`, CallCenterManager) + dashboards; ownership changes in `email-routing-log` + SF case history |

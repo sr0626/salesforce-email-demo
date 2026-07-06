@@ -36,6 +36,11 @@ output "owner_flow_map" {
   value       = { for k, a in var.agents : a.salesforce_owner_id => aws_connect_contact_flow.owner[k].arn }
 }
 
+output "owner_queue_map" {
+  description = "Map of Salesforce OwnerId -> that owner's queue ARN (native-email flow mode routes each email to the owner's queue)."
+  value       = { for k, a in var.agents : a.salesforce_owner_id => aws_connect_queue.owner[k].arn }
+}
+
 output "quick_connect_ids" {
   description = "Transfer quick-connect IDs by agent key — associate these to queues in the console to enable agent-to-agent transfer (collaboration)."
   value       = { for k, qc in aws_connect_quick_connect.owner : k => qc.quick_connect_id }

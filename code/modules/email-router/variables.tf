@@ -69,6 +69,36 @@ variable "owner_flow_map" {
   default     = {}
 }
 
+variable "owner_queue_map" {
+  type        = map(string)
+  description = "Flow mode (native email): map of Salesforce OwnerId -> Connect queue ARN. The inbound email flow Sets working queue to the returned targetQueueArn; unmapped owners fall back to fallback_queue_arn. Empty until the native-email queues are wired."
+  default     = {}
+}
+
+variable "fallback_queue_arn" {
+  type        = string
+  description = "Flow mode (native email): shared queue ARN used when the owner isn't in owner_queue_map. Empty string lets the email flow branch to a default queue."
+  default     = ""
+}
+
+variable "connect_email_bucket_name" {
+  type        = string
+  description = "Flow mode (Fix B): the S3 bucket where Connect stores native-email message bodies (EMAIL_MESSAGES storage). Empty disables body fetch (logs subject+metadata only)."
+  default     = ""
+}
+
+variable "connect_email_bucket_arn" {
+  type        = string
+  description = "ARN of connect_email_bucket_name, used to grant the Lambda role read access. Empty omits the S3 read statement."
+  default     = ""
+}
+
+variable "connect_email_prefix" {
+  type        = string
+  description = "S3 key prefix under which Connect writes EMAIL_MESSAGES objects (e.g. connect/salesforce-email-demo/EmailMessages)."
+  default     = ""
+}
+
 variable "inbound_object_prefix" {
   type        = string
   description = "S3 key prefix SES writes raw email under; the Lambda reads <prefix><messageId> to build the body preview + link."
