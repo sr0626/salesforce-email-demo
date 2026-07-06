@@ -242,6 +242,31 @@ Plugs into the same agent workspace (generative response recommendations). **Ver
 8. **SPF** TXT on `ccaas`: `v=spf1 include:amazonses.com ~all`.
 9. **Test** `ordersuccess@` round trip + confirm `taskdemo@` still creates Tasks.
 
+## Inbound flow — the two load-bearing routing rules (regression guard)
+
+The inbound flow (`Email-Inbound-Routing`) is exported to **`code/flows/Email-Inbound-Routing.json`**
+(version-controlled) and applied via **`code/email-inbound-flow.tf`** (`aws_connect_contact_flow.email_inbound`,
+guarded by `manage_email_inbound_flow`; import the console flow before enabling — see that file).
+
+Two blocks make or break the whole thing — **do not regress**:
+
+| Block | Must be | If wrong |
+|---|---|---|
+| **Set contact attributes** (after Invoke Lambda) | `caseId / ownerName / salesforceCaseUrl / ownerId` set **from `$.External`** | The Detail-view screen-pop shows **Case: - / Owner: -** (attributes never populated) |
+| **Set working queue** — MAIN path | **Dynamic** → `$.External.targetQueueArn` | A **manual** queue (e.g. `Email-Case-Queue`) sends **every** email to the shared queue → **owner-targeting bypassed**, per-owner agents never get it |
+| **Set working queue** — Lambda-**error** branch | **Manual** → `Email-Case-Queue` (shared fallback) | A dynamic queue here is empty on Lambda failure → contact **dropped** on Disconnect |
+
+`Email-Case-Queue` is the **shared safety-net** queue (served by the shared profile /
+`demo.agent` / supervisor) — it belongs **only** on the Lambda-error branch and as the
+Lambda's own `FALLBACK_QUEUE_ARN` for unmapped owners, **never** on the main path.
+*(Validated 2026-07-06: a main-path manual queue was the cause of emails landing in
+`Email-Case-Queue` and a blank 360.)*
+
+> **TODO (small, Lambda-failure edge case):** the exported `flows/Email-Inbound-Routing.json`
+> currently has the **Lambda-error branch still set to dynamic** `$.External.targetQueueArn`
+> (empty on Lambda failure → contact dropped). Change it to **manual `Email-Case-Queue`**
+> in the console → re-export → commit. Main-path routing is correct and validated.
+
 ## Step 9 — SF Case screen-pop in the agent workspace (Detail view)
 
 **Goal:** when the agent opens the email, they see the 360 — a **clickable Salesforce

@@ -1,0 +1,239 @@
+{
+  "Version": "2019-10-30",
+  "StartAction": "fd118457-125a-4d6e-a181-97b52dc6610a",
+  "Metadata": {
+    "entryPointPosition": {
+      "x": 40,
+      "y": 40
+    },
+    "ActionMetadata": {
+      "fd118457-125a-4d6e-a181-97b52dc6610a": {
+        "position": {
+          "x": -1.6,
+          "y": 259.2
+        },
+        "parameters": {
+          "EventHooks": {
+            "DefaultAgentUI": {
+              "displayName": "Email-Agent-Guide",
+              "useSetEventHook": true
+            }
+          }
+        }
+      },
+      "c5194d8c-c5f5-4bae-8626-75c7067ca63b": {
+        "position": {
+          "x": 278.4,
+          "y": -0.8
+        },
+        "parameters": {
+          "LambdaFunctionARN": {
+            "displayName": "email-case-router-lambda"
+          },
+          "LambdaInvocationAttributes": {
+            "emailSubject": {
+              "useDynamic": true
+            }
+          }
+        },
+        "dynamicMetadata": {
+          "emailSubject": true
+        }
+      },
+      "c680a08c-e1a8-458b-b2ba-0d848156a39b": {
+        "position": {
+          "x": 558.4,
+          "y": -0.8
+        },
+        "parameters": {
+          "Attributes": {
+            "ownerName": {
+              "useDynamic": true
+            },
+            "caseId": {
+              "useDynamic": true
+            },
+            "salesforceCaseUrl": {
+              "useDynamic": true
+            },
+            "ownerId": {
+              "useDynamic": true
+            }
+          }
+        },
+        "dynamicParams": [
+          "ownerName",
+          "caseId",
+          "salesforceCaseUrl",
+          "ownerId"
+        ]
+      },
+      "b8d968d6-9a09-4285-a5a1-95e1b97ede63": {
+        "position": {
+          "x": 558.4,
+          "y": 259.2
+        },
+        "parameters": {
+          "QueueId": {
+            "useDynamic": true
+          }
+        },
+        "useDynamic": true
+      },
+      "430486a3-e241-4e62-86a5-00110b6848b7": {
+        "position": {
+          "x": -1.6,
+          "y": 519.2
+        },
+        "parameters": {
+          "QueueId": {
+            "displayName": "Email-Case-Queue"
+          }
+        },
+        "queue": {
+          "text": "Email-Case-Queue"
+        }
+      },
+      "2658ae39-d3ea-4510-b664-d730b85855fd": {
+        "position": {
+          "x": 558.4,
+          "y": 519.2
+        }
+      },
+      "4bc71a65-4e8b-4456-99d4-32c70b21de4e": {
+        "position": {
+          "x": 558.4,
+          "y": 779.2
+        }
+      }
+    },
+    "Annotations": [],
+    "name": "Email-Inbound-Routing",
+    "description": "",
+    "type": "contactFlow",
+    "status": "published",
+    "hash": {}
+  },
+  "Actions": [
+    {
+      "Parameters": {
+        "EventHooks": {
+          "DefaultAgentUI": "arn:aws:connect:us-west-2:044336301301:instance/0f141da4-0141-49a4-aa6f-a6fb9a3bb116/contact-flow/60e37bdb-634b-49e0-b66f-f2802041fa0a"
+        }
+      },
+      "Identifier": "fd118457-125a-4d6e-a181-97b52dc6610a",
+      "Type": "UpdateContactEventHooks",
+      "Transitions": {
+        "NextAction": "c5194d8c-c5f5-4bae-8626-75c7067ca63b",
+        "Errors": [
+          {
+            "NextAction": "c5194d8c-c5f5-4bae-8626-75c7067ca63b",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "LambdaFunctionARN": "arn:aws:lambda:us-west-2:044336301301:function:email-case-router-lambda",
+        "InvocationTimeLimitSeconds": "8",
+        "InvocationType": "SYNCHRONOUS",
+        "LambdaInvocationAttributes": {
+          "emailSubject": "$.Name"
+        },
+        "ResponseValidation": {
+          "ResponseType": "STRING_MAP"
+        }
+      },
+      "Identifier": "c5194d8c-c5f5-4bae-8626-75c7067ca63b",
+      "Type": "InvokeLambdaFunction",
+      "Transitions": {
+        "NextAction": "c680a08c-e1a8-458b-b2ba-0d848156a39b",
+        "Errors": [
+          {
+            "NextAction": "430486a3-e241-4e62-86a5-00110b6848b7",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "Attributes": {
+          "ownerName": "$.External.ownerName",
+          "caseId": "$.External.caseId",
+          "salesforceCaseUrl": "$.External.salesforceCaseUrl",
+          "ownerId": "$.External.ownerId"
+        },
+        "TargetContact": "Current"
+      },
+      "Identifier": "c680a08c-e1a8-458b-b2ba-0d848156a39b",
+      "Type": "UpdateContactAttributes",
+      "Transitions": {
+        "NextAction": "b8d968d6-9a09-4285-a5a1-95e1b97ede63",
+        "Errors": [
+          {
+            "NextAction": "4bc71a65-4e8b-4456-99d4-32c70b21de4e",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "QueueId": "$.External.targetQueueArn"
+      },
+      "Identifier": "b8d968d6-9a09-4285-a5a1-95e1b97ede63",
+      "Type": "UpdateContactTargetQueue",
+      "Transitions": {
+        "NextAction": "2658ae39-d3ea-4510-b664-d730b85855fd",
+        "Errors": [
+          {
+            "NextAction": "4bc71a65-4e8b-4456-99d4-32c70b21de4e",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {
+        "QueueId": "arn:aws:connect:us-west-2:044336301301:instance/0f141da4-0141-49a4-aa6f-a6fb9a3bb116/queue/6ee4d50b-772e-4bda-9f59-be99ba30214b"
+      },
+      "Identifier": "430486a3-e241-4e62-86a5-00110b6848b7",
+      "Type": "UpdateContactTargetQueue",
+      "Transitions": {
+        "NextAction": "2658ae39-d3ea-4510-b664-d730b85855fd",
+        "Errors": [
+          {
+            "NextAction": "4bc71a65-4e8b-4456-99d4-32c70b21de4e",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "2658ae39-d3ea-4510-b664-d730b85855fd",
+      "Type": "TransferContactToQueue",
+      "Transitions": {
+        "NextAction": "4bc71a65-4e8b-4456-99d4-32c70b21de4e",
+        "Errors": [
+          {
+            "NextAction": "4bc71a65-4e8b-4456-99d4-32c70b21de4e",
+            "ErrorType": "QueueAtCapacity"
+          },
+          {
+            "NextAction": "4bc71a65-4e8b-4456-99d4-32c70b21de4e",
+            "ErrorType": "NoMatchingError"
+          }
+        ]
+      }
+    },
+    {
+      "Parameters": {},
+      "Identifier": "4bc71a65-4e8b-4456-99d4-32c70b21de4e",
+      "Type": "DisconnectParticipant",
+      "Transitions": {}
+    }
+  ]
+}

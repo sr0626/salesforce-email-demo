@@ -89,8 +89,8 @@ variable "salesforce_api_version" {
 
 variable "case_id_regex" {
   type        = string
-  description = "Regex to extract a Salesforce Case Number from the email subject; capture group 1 is the number."
-  default     = "Case\\s*#?(\\d{5,10})"
+  description = "Regex to extract a Salesforce Case Number from the email subject; capture group 1 is the number. Tolerates 'Case #NNNNN', 'Case # NNNNN', 'Case NNNNN', 'Case: NNNNN', '[Case NNNNN]' (case-insensitive). A bare number without the word 'Case' is intentionally NOT matched (too ambiguous)."
+  default     = "Case\\s*[#:]?\\s*(\\d{5,10})"
 }
 
 variable "auto_create_case" {
