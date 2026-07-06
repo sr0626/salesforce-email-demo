@@ -1,11 +1,13 @@
 # Outbound reply via Amazon Connect native email channel — plan (steps 3 & 9)
 
-**Status:** PLAN — **build-ready**. Native-email **plumbing proven** 2026-07-05 on a
-test address (`support@ccaas.evolvity.com`): inbound → agent read → agent reply →
-customer received. That test had **no Salesforce owner-routing** behind it and was
-**not** on `ordersuccess@` — so steps 3 & 9 are **not** done yet (docs/08 still lists
-them 🔜, correctly). What remains is wiring the routing brain into an inbound *email*
-flow and cutting `ordersuccess@` over. Decisions locked 2026-07-05 below.
+**Status: BUILT + VERIFIED (2026-07-06).** `ordersuccess@` is live on the Connect
+native email channel: inbound routes to the Salesforce Case Owner's queue → agent
+reads/replies natively → reply delivered to an external inbox (**SPF+DKIM pass**);
+the email logs to the SF Case with its **full HTML body**; agent-to-agent **quick-connect
+transfer** works; and the agent gets a **Detail-view screen-pop with a clickable Case
+link** on accept. Final-exercise **steps 3 & 9 complete.** The Task path remains on
+`taskdemo@` (hybrid). Build history + gotchas below; deferred follow-ups: DMARC record,
+attachments/inline images on the SF copy. Decisions locked 2026-07-05.
 
 ## Decisions locked (2026-07-05)
 - **Hybrid, not full retire.** Keep the proven **task-based** path live on a
@@ -239,6 +241,69 @@ Plugs into the same agent workspace (generative response recommendations). **Ver
 7. **Security profile:** grant agents **"Initiate email conversations."**
 8. **SPF** TXT on `ccaas`: `v=spf1 include:amazonses.com ~all`.
 9. **Test** `ordersuccess@` round trip + confirm `taskdemo@` still creates Tasks.
+
+## Step 9 — SF Case screen-pop in the agent workspace (Detail view)
+
+**Goal:** when the agent opens the email, they see the 360 — a **clickable Salesforce
+Case link** + owner + case #, from the contact attributes the inbound flow already
+sets (`salesforceCaseUrl`, `ownerName`, `caseId`). Mechanism = an AWS-managed
+**Detail view** shown via a **Show view** block (Connect's native "screen pop").
+Ref: https://docs.aws.amazon.com/connect/latest/adminguide/display-contact-attributes-sg.html
+
+**Status: DONE (2026-07-06).** On email accept, the agent workspace screen-pops the
+Detail view with the **clickable Salesforce Case link** + owner, from the contact
+attributes the inbound flow set, and **the panel persists** while the agent works the
+email. Requirement ("agent opens the interaction and sees the 360") met.
+
+**Key gotcha (resolved):** the "You have successfully completed the work flow" screen
+was the Show View block's **`Timeout` branch** firing — the default timeout is short.
+**Fix = raise the Show View block timeout (set to 5 minutes)**; the panel then stays up
+for the whole handle time. No Loop block needed (a direct self-loop is rejected by the
+designer anyway). Bump the timeout higher if agents need longer than 5 min on one email.
+
+**Layout note:** the workspace is fixed — CCP/email on the left, guide/view in the main
+area; not repositionable (theming + 3P apps only).
+
+### Mechanism (confirmed from AWS docs)
+- The **Show view** block renders an AWS-managed **Detail** view in the agent
+  workspace. It's supported on the **email** channel, and lives in an **Inbound
+  flow** type. (Views are under **UI Management → Views**; "Detail" is AWS Managed.)
+- Because email is async, the agent screen-pop is triggered by a **"Set event"**
+  block in the main inbound flow that launches a **separate guide flow** (containing
+  the Show view block) when the agent connects to the contact.
+- Agents need security-profile permission **"Agent Applications - Custom views -
+  All"** to *see* guides; authors need **"Channels and flows - Views"**.
+- The guide flow reads the contact attributes the inbound flow already set
+  (`caseId`, `ownerName`, `salesforceCaseUrl`) — same contact, so `$.Attributes.*`
+  is available.
+
+### Build parts
+1. **Guide flow** — new Inbound flow (e.g. `Email-Agent-Guide`): `Start → Show view
+   (Detail, Set JSON below) → Disconnect`. Publish.
+2. **Set event** — in `Email-Inbound-Routing`, a `Set event` block registers the
+   guide flow to run on agent-connect (before/independent of the queue transfer).
+3. **Permission** — add **Agent Applications - Custom views - All** to the agents'
+   security profile.
+
+### Show view → Detail, Set JSON (the clickable Case link)
+```json
+{
+  "Heading": "Salesforce 360",
+  "AttributeBar": [
+    { "Label": "Case",  "Value": "$.Attributes.caseId",   "LinkType": "external", "Url": "$.Attributes.salesforceCaseUrl" },
+    { "Label": "Owner", "Value": "$.Attributes.ownerName" }
+  ]
+}
+```
+
+### Confirmed console steps
+_(filled in as each block is verified)_
+1. Flows → Create flow types confirmed (no dedicated "guide" type; use Inbound flow). Show view block lives under **Integrate**.
+2. **Guide flow `Email-Agent-Guide` built + published:** `Start → Show View (View: Detail, AttributeBar Set-JSON = Case external link + Owner) → Disconnect`. The Show View block has 5 output branches (ActionSelected, Back, No Match, Error, Timeout) — wire **all five → Disconnect**.
+3. **Trigger via `Set event flow` block in `Email-Inbound-Routing`:** event hook = **"Default flow for Agent UI"**, flow = `Email-Agent-Guide` (Set manually). Placed inline near Start. This makes the agent workspace run the guide (→ screen-pop) when the agent accepts the email. Re-publish the inbound flow.
+4. **Permission:** add **Agent Applications - Custom views - All** to the agents' security profile.
+5. **Detail view requires a `Sections` component** (not just AttributeBar) — set a `Sections` Set-JSON (e.g. a one-line `TemplateString`) or the view errors out on render.
+6. **Raise the Show View block `Timeout` to 5 min** so the panel persists (default is short → it was auto-completing).
 
 ## What we keep from the task-based build (snapshot: branch `backup/task-based-architecture`)
 Salesforce Lambda logic (owner lookup/create/360/logging/reassign re-verify),
