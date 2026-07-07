@@ -1,0 +1,3 @@
+Name,Description,Shortcut Key,Routing Profile(s),Channel,Status,Content,Content Type
+<*Required field> Sample Greeting,Greeting1,G1,<*Required field>  *ALL*,<*Required field>  Chat,Inactive,"<*Required field>  Hello {{Attributes.CustomerName}}, how can I help you today?",Rich Text
+<*Required field> Sample Closure,Chat Closure,clc,<*Required field>  Basic Routing Profile,<*Required field>  Chat,Active,"<*Required field>  Thank you for contacting us, have a great day!",Plain Text

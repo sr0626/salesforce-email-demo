@@ -1,0 +1,5 @@
+Name,Description,Shortcut Key,Routing Profile(s),Channel,Status,Content,Content Type
+Order Status,Acknowledge and checking order status,os,*ALL*,Email,Active,"Thank you for reaching out — we're checking your order status now and will update you shortly. — Order Success Team",Plain Text
+Return Instructions,How to start a return,ret,*ALL*,Email,Active,"To start a return, reply with your order number and the reason, and we'll email a prepaid shipping label within 1 business day. — Order Success Team",Plain Text
+Shipping Delay,Apology for a shipping delay,delay,*ALL*,Email,Active,"We're sorry for the delay with your order. It has been prioritized and we'll share tracking details as soon as it ships. — Order Success Team",Plain Text
+Case Received,Acknowledge a new inquiry,rcv,*ALL*,Email,Active,"Thanks for contacting Order Success — we've logged your request and a specialist will follow up shortly. — Order Success Team",Plain Text

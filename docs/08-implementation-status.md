@@ -149,7 +149,7 @@ also gets a **Detail-view screen-pop** on accept with a clickable Salesforce Cas
 | Requirement | Status | Note |
 |---|---|---|
 | Unified agent desktop | 🟡 | Connect agent workspace + a **Detail-view screen-pop** surfacing the SF Case link/owner on accept; tighter full-SF unification via the CTI adapter is an enhancement |
-| Email templates and macros | 🟡 | The native email channel supports quick responses/templates (available on the channel; not curated for this demo) |
+| Email templates and macros | ✅ | **Built 2026-07-07** — 4 email **Quick responses** (Content Management → Quick responses); agent inserts via **`/#`** + search or shortcut (e.g. `/#os`) in the reply editor. Provisioned by bulk CSV import (`docs/email-quick-responses.csv`, `*ALL*` routing profiles, Active). **Console-only** (no `aws_qconnect_*`/wisdom resource in the provider). Authoring needs **Content Management** permission. **Gotcha:** after bulk import, responses need a short **index** (or a re-save) before agents see them — re-login not required. Message templates (signature/branding) available in the same menu. |
 | Address book integration | 🔜 | Not built |
 | Knowledge search | 🔜 | Amazon Q / knowledge base — not built (S8-adjacent) |
 | Multi-session handling | ✅ | Agents handle multiple concurrent contacts (TASK + EMAIL concurrency) |
