@@ -159,6 +159,39 @@ def lookup_case_owner(case_number, contact_id=None, account_id=None):
         return None, None, None
 
 
+def related_open_cases(contact_id, account_id, exclude_case_id, limit=5):
+    """S5 duplicate-work: find OTHER open cases for the same customer (Contact) and/or
+    Account, excluding the current case. Returns (count, summary) where summary is e.g.
+    '#00001030 (Sateesh, New); #00001031 (OrgFarm EPIC, Working)'. Best-effort."""
+    try:
+        clauses = []
+        if contact_id:
+            clauses.append(f"ContactId = '{_soql_escape(contact_id)}'")
+        if account_id:
+            clauses.append(f"AccountId = '{_soql_escape(account_id)}'")
+        if not clauses:
+            return 0, ""
+        token, instance_url = get_token()
+        where = "(" + " OR ".join(clauses) + ") AND IsClosed = false"
+        if exclude_case_id:
+            where += f" AND Id != '{_soql_escape(exclude_case_id)}'"
+        soql = (
+            "SELECT CaseNumber, Status, Owner.Name FROM Case "
+            f"WHERE {where} ORDER BY CreatedDate DESC LIMIT {int(limit)}"
+        )
+        recs = _query(instance_url, token, soql)
+        if not recs:
+            return 0, ""
+        parts = [
+            f"#{r.get('CaseNumber')} ({(r.get('Owner') or {}).get('Name') or 'Unassigned'}, {r.get('Status') or ''})"
+            for r in recs
+        ]
+        return len(recs), "; ".join(parts)
+    except Exception:
+        logger.exception("related_open_cases query failed")
+        return 0, ""
+
+
 def lookup_case_by_id(sf_case_id):
     """Re-read a case's CURRENT owner + number by record Id (used on the no-Case#
     fallback so ownership reassignment done in Salesforce is honored live).

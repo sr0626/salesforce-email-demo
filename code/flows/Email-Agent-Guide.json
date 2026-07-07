@@ -15,8 +15,8 @@
       },
       "48213558-fe39-4d6a-9bb4-737587ac877a": {
         "position": {
-          "x": 240,
-          "y": 44
+          "x": 239.2,
+          "y": 43.2
         },
         "parameters": {
           "ViewResource": {
@@ -42,7 +42,7 @@
     "name": "Email-Agent-Guide",
     "description": "",
     "type": "contactFlow",
-    "status": "PUBLISHED",
+    "status": "published",
     "hash": {}
   },
   "Actions": [
@@ -69,6 +69,10 @@
             {
               "Label": "Owner",
               "Value": "$.Attributes.ownerName"
+            },
+            {
+              "Label": "⚠️ Duplicate work",
+              "Value": "$.Attributes.dupWarning"
             }
           ],
           "Heading": "Salesforce 360",

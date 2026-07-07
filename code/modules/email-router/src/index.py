@@ -215,10 +215,22 @@ def _handle_flow(event):
         d["owner_id"], d["owner_name"], is_shared, connect_contact_id, d["outcome"],
     )
 
-    resp = connect_flow.build_response(d, mailbox, from_addr, is_shared, case_url)
+    # S5 duplicate-work alert: any OTHER open cases for this customer/account?
+    dup_count, dup_summary = salesforce.related_open_cases(
+        d["contact_id"], d["account_id"], d["sf_case_id"]
+    )
+    dup_warning = (
+        f"⚠️ {dup_count} other open case(s) for this customer: {dup_summary}"
+        if dup_count else "No other open cases for this customer."
+    )
+
+    resp = connect_flow.build_response(
+        d, mailbox, from_addr, is_shared, case_url, dup_count, dup_warning
+    )
     logger.info(
-        "flow-routed contactId=%s case=%s owner=%s outcome=%s queue=%s",
-        connect_contact_id, d["case_number"], d["owner_name"], d["outcome"], resp["targetQueueArn"],
+        "flow-routed contactId=%s case=%s owner=%s outcome=%s queue=%s dup=%s",
+        connect_contact_id, d["case_number"], d["owner_name"], d["outcome"],
+        resp["targetQueueArn"], dup_count,
     )
     return resp
 

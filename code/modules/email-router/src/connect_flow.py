@@ -12,7 +12,8 @@ Connect requires the return value to be a flat object of string values (no nesti
 from config import OWNER_QUEUE_MAP, FALLBACK_QUEUE_ARN
 
 
-def build_response(decision, mailbox, from_addr, is_shared, case_url):
+def build_response(decision, mailbox, from_addr, is_shared, case_url,
+                   dup_count=0, dup_warning=""):
     owner_id = decision["owner_id"]
     # Route to the owner's queue; if the owner isn't mapped (or is unassigned),
     # fall back to the shared queue. Empty string lets the flow branch to a default.
@@ -28,4 +29,7 @@ def build_response(decision, mailbox, from_addr, is_shared, case_url):
         "fromAddress": from_addr,
         "isSharedMailbox": "true" if is_shared else "false",
         "routingOutcome": decision["outcome"],
+        # S5 duplicate-work alert (surfaced in the SF-360 screen-pop).
+        "dupCount": str(dup_count),
+        "dupWarning": dup_warning,
     }

@@ -19,7 +19,7 @@ exercise. Update as features land. Legend:
 | 2 | Shared mailbox with individual ownership | ✅ Built — all requirements met |
 | 3 | Hybrid routing (ACD + agent self-selection) | ✅ Built — ACD push (owner queues) + native Worklist cherry-pick (`Email-Case-Queue`) running together; governance via security permission. Duplicate-work *alerts* (S5) is the only remaining sub-item |
 | 4 | Outbound email tracking & visibility | ✅ Built — native reporting (incoming/outgoing metrics + contact search) **and** outbound content logged to the SF Case as Outgoing `EmailMessage` (EventBridge → Lambda) for supervisor review |
-| 5 | Customer/account-level visibility | 🟡 Partial — customer + account 360 built; duplicate-work *alerts* not yet |
+| 5 | Customer/account-level visibility | ✅ Built — customer + account 360 (screen-pop + SF case) **and** proactive duplicate-work `⚠️` alerts (other open cases + owners) on accept |
 | 6 | Complex routing using CRM data | 🟡 Partial — routing engine built (by Case Owner); extends to any CRM field via same Lambda ♻️ |
 | 7 | Agent productivity & collaboration | 🟡 Partial — collaboration/consult + multi-session built; templates arrive with outbound; knowledge/drafts not yet |
 | 8 | AI & future-state | 🔜 Future-state roadmap via Amazon Q in Connect (docs/09) |
@@ -122,9 +122,9 @@ the picker. To make the picker the durable owner, they do **Change Owner in Sale
 | Account view: open cases across the account | ✅ | Account → Cases related list |
 | Account view: open interactions across the account | 🟡 | Via account cases/activity |
 | Account view: assigned ownership | ✅ | Case Owner |
-| Duplicate-work **alerts** (more emails / another agent working / related cases / pending requests) | 🔜 | The 360 is *visible* (agent can see related cases/emails), but no *proactive alert* — not built |
+| Duplicate-work **alerts** (more emails / another agent working / related cases / pending requests) | ✅ | **Built 2026-07-07** — the routing Lambda queries **other OPEN cases** for the customer's Contact/Account (`salesforce.related_open_cases`) and the **SF-360 screen-pop** shows `⚠️ N other open case(s): #NNNN (Owner, Status)` on accept. Owner column = "who else is working it". |
 | *Success:* agents understand history | ✅ | via the 360 |
-| *Success:* duplicate effort minimized | 🟡 | Visible via the 360; active alerting not built |
+| *Success:* duplicate effort minimized | ✅ | Proactive `⚠️` alert on accept lists the customer's other open cases + owners, so agents don't double-work |
 | *Success:* consistent CX across teams | ✅ | Same case/contact/account for everyone |
 
 Largely delivered by the Contact/Account 360 (step 7). On native email, the agent
@@ -180,7 +180,7 @@ also gets a **Detail-view screen-pop** on accept with a clickable Salesforce Cas
 |---|---|---|---|
 | 1 | Thread continuity as one interaction (S1) | Each reply is a separate Connect contact (email contact on `ordersuccess@`, Task on `taskdemo@`), though all tie to one Case | Link replies via Connect related-contacts so a thread is one interaction |
 | 2 | Case SLA / "overdue" tracking (**TODO — revisit**) | No SLA/response-time or "overdue" tracking; Salesforce "Overdue" applies only to due-dated Activities, not our emails | Salesforce **Entitlements & Milestones** or **Case Escalation Rules / Case Age** (Setup); or a scheduled check on `email-routing-log` |
-| 3 | Duplicate-work alerts (S5) | The 360 shows related cases/emails, but no proactive "someone's already on this" alert | Flow/Lambda check on related open cases/interactions → surface a warning attribute |
+| 3 | Duplicate-work alerts (S5) | ✅ **RESOLVED 2026-07-07** — Lambda checks related **open** cases → `⚠️` warning attribute surfaced in the SF-360 screen-pop | (done) |
 | 4 | Agent self-selection / cherry-pick (S3) | ACD push only | Add a pull/manual-select queue + supervisor governance |
 | 5 | Owner-queue unhandled email (**validated 2026-07-06**) | Reject/miss test confirmed: an unaccepted email returns to the owner's **single-agent** queue with **no fallback agent** — it waits for that owner (who is flipped to "Missed" and stops receiving new contacts until Available again). SF case logging/ownership/audit already happened in the inbound flow, so the 360 is intact regardless. | **TODO: send an ALERT** when an email sits unhandled in the owner queue past N min (supervisor notification — e.g. Connect queue-threshold rule, or EventBridge → SNS/email). **Deliberately NO overflow queue** — keeps strict owner-targeting (Scenario 1/2); the alert prompts the owner/supervisor instead of reassigning. **Optional variant TODO:** instead of/alongside the alert, **spill the unpicked owner email into `Email-Case-Queue`** after N min so it becomes cherry-pickable in the Worklist (turns the timeout into a manual-pull escalation). |
 | 6 | Cherry-pick self-assign doesn't set ownership (S3) | Worklist "Assign to me" / supervisor self-assign+transfer assigns the *contact* in Connect but does **not** update the Salesforce Case Owner or DynamoDB ownership → the picker isn't the durable owner; a later no-`Case#` reply won't route back to them. | **TODO:** on self-assign, update the **SF Case Owner** (Change Owner) + write the **DynamoDB ownership** row (e.g. a flow/EventBridge hook on contact-assigned → Lambda). Manual workaround today: agent does Change Owner in Salesforce after pickup. |
@@ -206,6 +206,7 @@ Deliberate simplifications for this round (not defects):
 | Email link | The `Email`/rendered-view link is a **presigned URL that expires** (12h TTL). | Serve via an authenticated agent app instead of a presigned link. |
 | Account activity roll-up | Emails show on the **Contact** timeline (via `EmailMessageRelation`) with no config; showing them on the **Account** timeline needs the org setting **"Roll up activities to a contact's primary account."** | Standard Salesforce config — enabled in this demo org. Account **Cases** related list shows without any setting. |
 | Salesforce Case access | Task path: a `SalesforceCase` reference deep link. Native email: the **Detail-view screen-pop** Case link on accept. Both are click-through (meets "agent opens the interaction and sees"). | *Optional:* CTI Adapter (Task) / Streams+Open CTI bridge (email) for literal auto-navigation. |
+| Screen-pop styling | The screen-pop uses the AWS-managed **Detail view** — **fixed fonts/colors** (the S5 alert sits in the AttributeBar for prominence). **TODO:** build a **Custom View** (no-code UI builder) for a polished look (larger font, red/bold warning banner, layout control). |
 
 ---
 
@@ -233,7 +234,7 @@ the demo's simplifications aren't mistaken for the prod design.
 | End-to-end audit trail | Every routing decision in `email-routing-log` (case, owner, outcome, contactId, timestamp). |
 | Full CMK encryption | S3, DynamoDB, Secrets Manager, Lambda env — all encrypted with the customer-managed KMS key. |
 | Native-email SF case logging | Native email bodies fetched from Connect's EMAIL_MESSAGES storage → logged as **formatted HTML `EmailMessage`** on the Case. |
-| Native-email screen-pop | Detail-view **screen-pop** on accept with a clickable Salesforce Case link + owner, driven by the routing Lambda's attributes. |
+| Native-email screen-pop | Detail-view **screen-pop** on accept with a clickable Salesforce Case link + owner + **duplicate-work `⚠️` alert** (other open cases), driven by the routing Lambda's attributes. |
 
 ---
 
