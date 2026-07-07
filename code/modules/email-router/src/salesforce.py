@@ -92,15 +92,16 @@ def _split_name(display, from_addr):
 
 def resolve_contact_account(from_addr, from_display):
     """Find-or-create a Contact (by email) + Account (by email domain) so cases
-    link to a customer 360. Returns (contactId, accountId)."""
+    link to a customer 360. Returns (contactId, accountId, firstName) — firstName is
+    the CRM Contact's first name (used to personalize quick responses)."""
     try:
         token, instance_url = get_token()
         found = _query(
             instance_url, token,
-            f"SELECT Id, AccountId FROM Contact WHERE Email = '{_soql_escape(from_addr)}' LIMIT 1",
+            f"SELECT Id, AccountId, FirstName FROM Contact WHERE Email = '{_soql_escape(from_addr)}' LIMIT 1",
         )
         if found:
-            return found[0]["Id"], found[0].get("AccountId")
+            return found[0]["Id"], found[0].get("AccountId"), found[0].get("FirstName")
 
         domain = from_addr.split("@")[-1] if "@" in from_addr else ""
         account_id = None
@@ -115,10 +116,10 @@ def resolve_contact_account(from_addr, from_display):
         if account_id:
             contact_body["AccountId"] = account_id
         contact_id = _insert(instance_url, token, "Contact", contact_body)
-        return contact_id, account_id
+        return contact_id, account_id, first
     except Exception:
         logger.exception("Could not resolve contact/account for %s", from_addr)
-        return None, None
+        return None, None, None
 
 
 def case_url(sf_case_id):

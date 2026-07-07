@@ -48,8 +48,8 @@ def _resolve_routing(subject, mailbox, from_addr, from_display):
     """
     # Resolve the customer once (Contact + Account) so the case, its emails,
     # and the customer's activity all tie to the same 360.
-    contact_id, account_id = (
-        salesforce.resolve_contact_account(from_addr, from_display) if LINK_CONTACT else (None, None)
+    contact_id, account_id, contact_first = (
+        salesforce.resolve_contact_account(from_addr, from_display) if LINK_CONTACT else (None, None, None)
     )
 
     m = CASE_RE.search(subject)
@@ -96,6 +96,7 @@ def _resolve_routing(subject, mailbox, from_addr, from_display):
         "sf_case_id": sf_case_id,
         "contact_id": contact_id,
         "account_id": account_id,
+        "contact_first_name": contact_first,
         "outcome": outcome,
     }
 
@@ -224,8 +225,15 @@ def _handle_flow(event):
         if dup_count else "No other open cases for this customer."
     )
 
+    # Quick-response personalization. Prefer the CRM Contact first name; fall back to the
+    # email display name (native email puts it in CustomerEndpoint.DisplayName). If no
+    # name, the greeting is just "Hi," (no dangling comma).
+    customer_display = (contact.get("CustomerEndpoint") or {}).get("DisplayName", "") or from_display
+    customer_name = d.get("contact_first_name") or (customer_display.split()[0] if customer_display else "")
+    greeting = f"Hi {customer_name}," if customer_name else "Hi,"
+
     resp = connect_flow.build_response(
-        d, mailbox, from_addr, is_shared, case_url, dup_count, dup_warning
+        d, mailbox, from_addr, is_shared, case_url, dup_count, dup_warning, customer_name, greeting
     )
     logger.info(
         "flow-routed contactId=%s case=%s owner=%s outcome=%s queue=%s dup=%s",

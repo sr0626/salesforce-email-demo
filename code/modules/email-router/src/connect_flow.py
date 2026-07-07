@@ -13,7 +13,7 @@ from config import OWNER_QUEUE_MAP, FALLBACK_QUEUE_ARN
 
 
 def build_response(decision, mailbox, from_addr, is_shared, case_url,
-                   dup_count=0, dup_warning=""):
+                   dup_count=0, dup_warning="", customer_name="", greeting="Hi,"):
     owner_id = decision["owner_id"]
     # Route to the owner's queue; if the owner isn't mapped (or is unassigned),
     # fall back to the shared queue. Empty string lets the flow branch to a default.
@@ -32,4 +32,8 @@ def build_response(decision, mailbox, from_addr, is_shared, case_url,
         # S5 duplicate-work alert (surfaced in the SF-360 screen-pop).
         "dupCount": str(dup_count),
         "dupWarning": dup_warning,
+        # S7 personalization for quick responses: {{Attributes.greeting}} = "Hi <name>,"
+        # or "Hi," when no name; customerName is the raw first name (may be empty).
+        "customerName": customer_name,
+        "greeting": greeting,
     }
