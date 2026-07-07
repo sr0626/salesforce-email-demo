@@ -71,6 +71,12 @@ variable "connect_email_prefix" {
   default     = "connect/salesforce-email-demo/EmailMessages"
 }
 
+variable "flow_debug" {
+  type        = bool
+  description = "Turn on verbose Lambda payload logging (flow + contact events). Off by default; set true in tfvars to capture a real event during troubleshooting."
+  default     = false
+}
+
 ########################################
 # Salesforce
 ########################################

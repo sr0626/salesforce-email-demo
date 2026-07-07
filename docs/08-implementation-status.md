@@ -18,7 +18,7 @@ exercise. Update as features land. Legend:
 | 1 | Salesforce case-based email routing | ✅ Built — all requirements met |
 | 2 | Shared mailbox with individual ownership | ✅ Built — all requirements met |
 | 3 | Hybrid routing (ACD + agent self-selection) | ✅ Built — ACD push (owner queues) + native Worklist cherry-pick (`Email-Case-Queue`) running together; governance via security permission. Duplicate-work *alerts* (S5) is the only remaining sub-item |
-| 4 | Outbound email tracking & visibility | 🟡 Outbound **built** on the native email channel (agent replies tracked as Connect email contacts + `email-routing-log`); dedicated outbound-only reporting views are the remaining polish |
+| 4 | Outbound email tracking & visibility | ✅ Built — native reporting (incoming/outgoing metrics + contact search) **and** outbound content logged to the SF Case as Outgoing `EmailMessage` (EventBridge → Lambda) for supervisor review |
 | 5 | Customer/account-level visibility | 🟡 Partial — customer + account 360 built; duplicate-work *alerts* not yet |
 | 6 | Complex routing using CRM data | 🟡 Partial — routing engine built (by Case Owner); extends to any CRM field via same Lambda ♻️ |
 | 7 | Agent productivity & collaboration | 🟡 Partial — collaboration/consult + multi-session built; templates arrive with outbound; knowledge/drafts not yet |
@@ -91,14 +91,23 @@ the picker. To make the picker the durable owner, they do **Change Owner in Sale
 
 | Requirement | Status | Note |
 |---|---|---|
-| Agent-initiated outbound email | ✅ | Native email channel — agents reply and initiate emails from `ordersuccess@` ("Initiate email conversation" permission on) |
-| Tracking of outbound-only interactions | ✅ | Connect records the outbound reply/email as a contact (email channel) |
-| Reporting on outbound communications | 🟡 | Native Connect historical metrics + contact search capture it; a dedicated outbound-only report is polish |
-| Visibility into agent productivity | 🟡 | Native Connect agent metrics; outbound-specific report is polish |
-| Audit and review capabilities | ✅ | `email-routing-log` + Connect contact records |
-| *Success:* outbound reportable / leadership visibility / supervisors evaluate | 🟡 | Outbound is tracked + in dashboards/contact search; a tailored leadership outbound report is the remaining polish |
+| Agent-initiated outbound email | ✅ | Native email channel — agents reply and **initiate new** emails from `ordersuccess@` ("Initiate email conversation" perm + the queue **Outbound email configuration** From-address, console-only — see findings) |
+| Tracking of outbound-only interactions | ✅ | Connect records outbound as a contact (Initiation method OUTBOUND / AGENT_REPLY) |
+| Reporting on outbound communications | ✅ | **S4-A** — native historical metrics break out **"Contacts handled incoming" vs "outgoing" per email address**; Contact search filters **Channel=Email + Initiation method=OUTBOUND** (validated 2026-07-06) |
+| Visibility into agent productivity | ✅ | Native agent metrics (handled/AHT) grouped by Agent + the incoming/outgoing split |
+| Audit and review capabilities | ✅ | **S4-B** — the agent's outbound reply is logged as an **Outgoing `EmailMessage`** on the SF Case (full in + out thread for supervisor review), plus `email-routing-log` + Connect contact records (validated 2026-07-07) |
+| *Success:* outbound reportable / leadership visibility / supervisors evaluate | ✅ | Metrics report + contact search (counts/handling) **and** the outbound content on the SF Case (S4-B) for content-level review |
 
-Outbound delivered via the Connect native email channel (final-exercise steps 3 & 9, docs/09).
+**Scenario 4 = Built.** Outbound via the Connect native email channel (final-exercise steps 3 & 9, docs/09).
+
+**S4-A findings (native outbound reporting, 2026-07-06):**
+- **Queue Outbound email configuration is CONSOLE-only** (provider gap — `aws_connect_queue` has `outbound_caller_config` for voice but **no** `outbound_email_config`). Per queue: set Default email address = `ordersuccess@`; the **Outbound email flow is optional** (blank works). Add to the console-only rebuild checklist.
+- **Metric semantics:** "Contacts handled" counts only agent-**accepted** contacts; the historical report's default range can **exclude the current day** — extend it.
+- **Step-by-step guides create companion `Chat`/`API` contacts** (the SF-360 Show-view screen-pop renders as an API-initiated chat, ~1 per handled email). Filter **Channel=Email** to exclude them; prod note: adds chat-contact volume/possible cost.
+
+**S4-B (outbound → Salesforce logging, 2026-07-07):**
+- **EventBridge** rule (`aws.connect` → Connect Contact Event, `channel=EMAIL`, `eventType=COMPLETED`) → the router Lambda in **outbound-log mode** (`_handle_outbound_log`). Filters `initiationMethod ∈ {AGENT_REPLY, OUTBOUND}`; maps the reply to its Case via the inbound contact in `email-routing-log`; reads the sent body from the `EMAIL_MESSAGES` bucket (reused `connect_email.fetch_body`); posts an **Outgoing** `EmailMessage` (`Incoming=false`, Status Sent). No Kinesis. IAM adds `dynamodb:Query`.
+- **SF display note:** EmailMessages show in the Case **feed ("All Updates")** and **Emails related list** (full in + out thread). The **Activity History** related list threads/groups them and may show only the latest — *not* a logging gap; review outbound on the feed/Emails list.
 
 ## Scenario 5 — Customer and Account-Level Visibility
 

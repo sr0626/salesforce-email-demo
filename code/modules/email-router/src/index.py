@@ -223,8 +223,80 @@ def _handle_flow(event):
     return resp
 
 
+def _handle_outbound_log(event):
+    """S4-B: EventBridge Connect Contact Event (COMPLETED) for an agent's outbound
+    EMAIL — log the sent message as an Outgoing EmailMessage on the SF Case so the
+    Case shows the full in + out thread (supervisor review / audit).
+
+    Only AGENT_REPLY / OUTBOUND email contacts are logged. The reply maps to its Case
+    via the related inbound contact in the routing log; the body is read from Connect's
+    EMAIL_MESSAGES storage (keyed by the reply contactId).
+    """
+    d = event.get("detail", {}) or {}
+
+    def g(*names):  # Connect emits mixed-case field names across event types
+        for n in names:
+            if d.get(n) not in (None, ""):
+                return d[n]
+        return None
+
+    if FLOW_DEBUG:
+        logger.info("contact-event: %s", json.dumps(event, default=str))
+
+    channel = (g("channel", "Channel") or "").upper()
+    init = (g("initiationMethod", "InitiationMethod") or "").upper()
+    contact_id = g("contactId", "ContactId")
+    related = g("relatedContactId", "RelatedContactId") or \
+        g("initialContactId", "InitialContactId") or g("previousContactId", "PreviousContactId")
+    logger.info("contact-event ch=%s init=%s contactId=%s related=%s", channel, init, contact_id, related)
+
+    if channel != "EMAIL" or init not in ("AGENT_REPLY", "OUTBOUND"):
+        return {"status": "skipped", "reason": f"channel={channel} init={init}"}
+    if not LOG_EMAIL_TO_SF:
+        return {"status": "disabled"}
+
+    # Map the outbound reply back to its Case via the inbound contact's routing-log row.
+    routing = storage.lookup_routing_by_contact(related)
+    case_number = (routing or {}).get("caseId")
+    if not case_number:
+        logger.info("outbound-log: no case mapping (contactId=%s related=%s init=%s)",
+                    contact_id, related, init)
+        return {"status": "no-case"}
+
+    mailbox = (routing or {}).get("mailbox", "")
+    customer = (routing or {}).get("fromAddress", "")
+    subject = (routing or {}).get("subject", "")
+
+    # Resolve the SF Case record id from the case number (reuses the owner lookup query).
+    owner_id, owner_name, sf_case_id = salesforce.lookup_case_owner(case_number, None, None)
+    if not sf_case_id:
+        return {"status": "case-not-found", "case": case_number}
+
+    # Outbound body from Connect's EMAIL_MESSAGES storage (keyed by the reply contactId).
+    text_body, html_body = connect_email.fetch_body({"ContactId": contact_id})
+    if not text_body and not html_body:
+        text_body = f"(Outbound email sent via Amazon Connect — contactId {contact_id})"
+
+    salesforce.log_email_to_case(
+        sf_case_id, subject, mailbox, customer, text_body, html_body,
+        contact_id=None, incoming=False,
+    )
+    storage.write_audit_log(
+        contact_id, mailbox, mailbox, subject, case_number,
+        owner_id, owner_name, mailbox in SHARED_MAILBOXES, contact_id, "outbound-logged",
+    )
+    logger.info("outbound-logged contactId=%s case=%s init=%s", contact_id, case_number, init)
+    return {"status": "ok", "case": case_number}
+
+
 def handler(event, context):
-    # Connect flow invocations carry Details.ContactData; SES carries Records.
-    if isinstance(event, dict) and (event.get("Details") or {}).get("ContactData"):
-        return _handle_flow(event)
+    # Dispatch by event shape:
+    #   EventBridge Connect Contact Event -> outbound-logging (S4-B)
+    #   Connect flow invocation (Details.ContactData) -> flow-mode routing
+    #   SES receipt-rule (Records) -> Task path
+    if isinstance(event, dict):
+        if event.get("detail-type") == "Amazon Connect Contact Event":
+            return _handle_outbound_log(event)
+        if (event.get("Details") or {}).get("ContactData"):
+            return _handle_flow(event)
     return _handle_ses(event)

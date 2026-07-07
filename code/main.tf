@@ -98,6 +98,7 @@ module "email_router" {
   connect_email_bucket_name = var.connect_email_bucket_name
   connect_email_bucket_arn  = var.connect_email_bucket_name != "" ? "arn:aws:s3:::${var.connect_email_bucket_name}" : ""
   connect_email_prefix      = var.connect_email_prefix
+  flow_debug                = var.flow_debug
 
   shared_mailboxes         = var.shared_mailboxes
   case_id_regex            = var.case_id_regex

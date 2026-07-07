@@ -245,8 +245,11 @@ Plugs into the same agent workspace (generative response recommendations). **Ver
 ## Inbound flow — the two load-bearing routing rules (regression guard)
 
 The inbound flow (`Email-Inbound-Routing`) is exported to **`code/flows/Email-Inbound-Routing.json`**
-(version-controlled) and applied via **`code/email-inbound-flow.tf`** (`aws_connect_contact_flow.email_inbound`,
-guarded by `manage_email_inbound_flow`; import the console flow before enabling — see that file).
+(version-controlled). Console-authored flows are tracked in **`code/flows.tf`**
+(`aws_connect_contact_flow.email_inbound` / `.email_agent_guide`) with
+**`lifecycle { ignore_changes = all }`** and a `manage_console_flows` count guard — so
+`terraform apply` **never overwrites** manual console edits; the JSON stays a
+reproducible reference and the console remains the editing surface.
 
 Two blocks make or break the whole thing — **do not regress**:
 
@@ -262,10 +265,11 @@ Lambda's own `FALLBACK_QUEUE_ARN` for unmapped owners, **never** on the main pat
 *(Validated 2026-07-06: a main-path manual queue was the cause of emails landing in
 `Email-Case-Queue` and a blank 360.)*
 
-> **TODO (small, Lambda-failure edge case):** the exported `flows/Email-Inbound-Routing.json`
-> currently has the **Lambda-error branch still set to dynamic** `$.External.targetQueueArn`
-> (empty on Lambda failure → contact dropped). Change it to **manual `Email-Case-Queue`**
-> in the console → re-export → commit. Main-path routing is correct and validated.
+> **RESOLVED (2026-07-07):** the Lambda-error branch (`430486a3`) is now **manual
+> `Email-Case-Queue`** (shared fallback) while the main path (`b8d968d6`) stays dynamic
+> `$.External.targetQueueArn` — fixed in the console and re-exported to
+> `flows/Email-Inbound-Routing.json`. A Lambda failure now spills to the shared queue
+> instead of dropping the contact.
 
 ## Step 9 — SF Case screen-pop in the agent workspace (Detail view)
 

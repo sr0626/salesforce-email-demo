@@ -15,9 +15,11 @@ locals {
       Resource = var.ownership_table_arn
     },
     {
-      Sid      = "RoutingLogWrite"
+      Sid      = "RoutingLogWriteRead"
       Effect   = "Allow"
-      Action   = ["dynamodb:PutItem"]
+      # Query added for S4-B: map an outbound reply back to its Case via the inbound
+      # contact's routing-log row.
+      Action   = ["dynamodb:PutItem", "dynamodb:Query"]
       Resource = var.routing_log_table_arn
     },
     {
@@ -123,6 +125,7 @@ resource "aws_lambda_function" "router" {
       AUTO_CREATE_CASE    = var.auto_create_case ? "true" : "false"
       LOG_EMAIL_TO_SF     = var.log_email_to_salesforce ? "true" : "false"
       LINK_CONTACT        = var.link_customer_to_contact ? "true" : "false"
+      FLOW_DEBUG          = var.flow_debug ? "true" : "false"
     }
   }
 }
@@ -130,3 +133,38 @@ resource "aws_lambda_function" "router" {
 # NOTE: no aws_lambda_permission for SES here. The SES receipt rule's Lambda
 # action (created manually in the console, doc 05) adds the invoke permission
 # automatically when you accept the "Allow SES to invoke this function?" prompt.
+
+########################################
+# S4-B: outbound email -> Salesforce logging
+# EventBridge subscribes to Connect Contact Events (COMPLETED email contacts) and
+# invokes the router in outbound-log mode. Connect emits these to the default event
+# bus; creating the rule is the subscription (no Kinesis).
+########################################
+resource "aws_cloudwatch_event_rule" "outbound_email_completed" {
+  name        = "${var.lambda_function_name}-outbound-email-completed"
+  description = "Connect email contacts completed -> log agent outbound to the SF Case"
+  event_pattern = jsonencode({
+    source      = ["aws.connect"]
+    detail-type = ["Amazon Connect Contact Event"]
+    detail = {
+      channel   = ["EMAIL"]
+      eventType = ["COMPLETED"]
+      # initiationMethod filtered in the Lambda (AGENT_REPLY / OUTBOUND) so a casing
+      # difference in the event can't silently drop the rule match.
+    }
+  })
+}
+
+resource "aws_cloudwatch_event_target" "outbound_email_lambda" {
+  rule      = aws_cloudwatch_event_rule.outbound_email_completed.name
+  target_id = "email-router-outbound-log"
+  arn       = aws_lambda_function.router.arn
+}
+
+resource "aws_lambda_permission" "eventbridge_outbound" {
+  statement_id  = "AllowEventBridgeOutboundLog"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.router.function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.outbound_email_completed.arn
+}

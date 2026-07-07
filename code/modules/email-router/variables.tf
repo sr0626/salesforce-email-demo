@@ -99,6 +99,12 @@ variable "connect_email_prefix" {
   default     = ""
 }
 
+variable "flow_debug" {
+  type        = bool
+  description = "When true, the Lambda logs full flow / contact-event payloads (verbose, includes PII). Off by default; turn on to troubleshoot."
+  default     = false
+}
+
 variable "inbound_object_prefix" {
   type        = string
   description = "S3 key prefix SES writes raw email under; the Lambda reads <prefix><messageId> to build the body preview + link."

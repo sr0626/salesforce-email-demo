@@ -204,9 +204,15 @@ def create_case(subject, from_addr, contact_id=None, account_id=None):
         return None, None, None, None
 
 
-def log_email_to_case(sf_case_id, subject, from_addr, to_addr, text_body, html_body, contact_id=None):
-    """Create an incoming EmailMessage on the Case (case history) and relate it to
-    the Contact (so it also appears on the customer's Activity timeline)."""
+def log_email_to_case(sf_case_id, subject, from_addr, to_addr, text_body, html_body,
+                      contact_id=None, incoming=True):
+    """Create an EmailMessage on the Case (case history) and relate it to the Contact
+    (so it also appears on the customer's Activity timeline).
+
+    incoming=True  -> customer's inbound email (Status New).
+    incoming=False -> agent's outbound reply/email (Status Sent) — used by S4-B so the
+                      Case shows the full in + out thread for supervisor review.
+    """
     try:
         token, instance_url = get_token()
         body = {
@@ -214,8 +220,8 @@ def log_email_to_case(sf_case_id, subject, from_addr, to_addr, text_body, html_b
             "Subject": subject or "(no subject)",
             "FromAddress": from_addr,
             "ToAddress": to_addr,
-            "Incoming": True,
-            "Status": "0",  # New
+            "Incoming": incoming,
+            "Status": "0" if incoming else "3",  # 0=New (in), 3=Sent (out)
             "MessageDate": now_iso(),
         }
         if text_body:
@@ -225,12 +231,13 @@ def log_email_to_case(sf_case_id, subject, from_addr, to_addr, text_body, html_b
         email_id = _insert(instance_url, token, "EmailMessage", body)
 
         if contact_id:
+            # Relate on the customer's address: inbound = From (sender), outbound = To (recipient).
             try:
                 _insert(instance_url, token, "EmailMessageRelation", {
                     "EmailMessageId": email_id,
                     "RelationId": contact_id,
-                    "RelationType": "FromAddress",
-                    "RelationAddress": from_addr,
+                    "RelationType": "FromAddress" if incoming else "ToAddress",
+                    "RelationAddress": from_addr if incoming else to_addr,
                 })
             except Exception:
                 logger.exception("Could not relate email %s to contact %s", email_id, contact_id)

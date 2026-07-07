@@ -111,7 +111,7 @@
     "name": "Email-Inbound-Routing",
     "description": "",
     "type": "contactFlow",
-    "status": "published",
+    "status": "PUBLISHED",
     "hash": {}
   },
   "Actions": [

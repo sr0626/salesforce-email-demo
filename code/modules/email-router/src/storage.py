@@ -1,5 +1,7 @@
 """DynamoDB persistence: shared-mailbox ownership + routing audit log."""
 
+from boto3.dynamodb.conditions import Key
+
 from config import OWNERSHIP_TABLE, LOG_TABLE, now_iso
 
 
@@ -24,6 +26,21 @@ def lookup_ownership_fallback(mailbox, customer_email):
     if not item:
         return None, None, None, None
     return item["ownerId"], item["ownerName"], item.get("sfCaseId"), item.get("caseId")
+
+
+def lookup_routing_by_contact(inbound_contact_id):
+    """S4-B: find the routing-log row for an inbound email contact (emailId = the
+    inbound Connect contactId) so an outbound reply can be mapped back to its Case.
+    Returns the most recent matching item, or None."""
+    if not inbound_contact_id:
+        return None
+    resp = LOG_TABLE.query(
+        KeyConditionExpression=Key("emailId").eq(inbound_contact_id),
+        ScanIndexForward=False,
+        Limit=1,
+    )
+    items = resp.get("Items", [])
+    return items[0] if items else None
 
 
 def write_audit_log(
