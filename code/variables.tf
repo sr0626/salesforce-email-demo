@@ -77,6 +77,68 @@ variable "flow_debug" {
   default     = false
 }
 
+variable "case_status_on_reply" {
+  type        = string
+  description = "On the agent's first reply, advance the Salesforce Case Status to this (from \"New\" only; never overrides Working/Escalated/Closed). Empty disables. Closing stays manual."
+  default     = "Working"
+}
+
+########################################
+# EventBridge / cost toggles
+########################################
+
+variable "outbound_log_enabled" {
+  type        = bool
+  description = "Toggle the S4-B outbound-log EventBridge rule. true (default) logs agent replies to the SF Case; false disables the rule so nothing fires when the instance is idle."
+  default     = true
+}
+
+########################################
+# Owner-timeout SLA alert
+########################################
+
+variable "sla_alert_enabled" {
+  type        = bool
+  description = "Toggle the scheduled owner-timeout SLA check. false leaves the EventBridge rule DISABLED (created but not firing); flip to true only for the demo."
+  default     = false
+}
+
+variable "sla_alert_email" {
+  type        = string
+  description = "Supervisor recipient(s) for the SLA alert email (SES). Comma-separated for multiple. Empty disables the alert."
+  default     = ""
+}
+
+variable "sla_from_address" {
+  type        = string
+  description = "From address for the SLA alert email — must be a verified SES identity (any local part at the verified domain, e.g. alerts@ccaas.evolvity.com). Empty disables the alert."
+  default     = ""
+}
+
+variable "sla_threshold_seconds" {
+  type        = number
+  description = "Alert when an owner queue's oldest unhandled email is at least this many seconds old. Default 5 min; lower (e.g. 120) for a snappier demo."
+  default     = 300
+}
+
+variable "sla_check_rate" {
+  type        = string
+  description = "EventBridge schedule expression for the SLA check cadence (e.g. \"rate(5 minutes)\"). Only fires when sla_alert_enabled = true."
+  default     = "rate(5 minutes)"
+}
+
+variable "sla_realert_minutes" {
+  type        = number
+  description = "Re-alert cooldown (minutes): don't re-email for the same queue within this window, so a standing breach doesn't notify every tick. Default 60."
+  default     = 60
+}
+
+variable "sla_context_hours" {
+  type        = number
+  description = "How far back the SLA alert pulls email context (sender/subject/time/case) from the routing log. Wider than the threshold so a long-waiting email still lists. Default 72h."
+  default     = 72
+}
+
 ########################################
 # Salesforce
 ########################################

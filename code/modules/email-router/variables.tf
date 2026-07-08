@@ -81,6 +81,12 @@ variable "fallback_queue_arn" {
   default     = ""
 }
 
+variable "owner_name_map" {
+  type        = map(string)
+  description = "Map of Salesforce OwnerId -> agent display name (\"First Last\"), so the SLA alert can name the agent behind each owner queue. Unmapped owners show a dash; the fallback queue shows \"Shared / unassigned\"."
+  default     = {}
+}
+
 variable "connect_email_bucket_name" {
   type        = string
   description = "Flow mode (Fix B): the S3 bucket where Connect stores native-email message bodies (EMAIL_MESSAGES storage). Empty disables body fetch (logs subject+metadata only)."
@@ -111,6 +117,58 @@ variable "inbound_object_prefix" {
   default     = "inbound/"
 }
 
+# --- EventBridge / cost toggles ---
+
+variable "outbound_log_enabled" {
+  type        = bool
+  description = "Toggle the S4-B outbound-log EventBridge rule (agent reply -> SF Case). true (default) logs the full thread; false leaves the rule DISABLED so no invokes fire when the instance is idle."
+  default     = true
+}
+
+# --- SLA alert (owner-timeout) ---
+
+variable "sla_alert_enabled" {
+  type        = bool
+  description = "Toggle the scheduled owner-timeout SLA check. false leaves the EventBridge rule DISABLED (created but not firing) so you can turn it on only for the demo. true polls on sla_check_rate."
+  default     = false
+}
+
+variable "sla_alert_email" {
+  type        = string
+  description = "Supervisor recipient(s) for the SLA alert email (SES). Comma-separated for multiple. Empty disables the alert (no send)."
+  default     = ""
+}
+
+variable "sla_from_address" {
+  type        = string
+  description = "From address for the SLA alert email. Must be a verified SES identity — any local part at the verified ccaas.evolvity.com domain works (e.g. alerts@ccaas.evolvity.com). Empty disables the alert."
+  default     = ""
+}
+
+variable "sla_threshold_seconds" {
+  type        = number
+  description = "SLA breach threshold: alert when an owner queue's oldest unhandled email is at least this many seconds old. Default 5 min; lower (e.g. 120) for a snappier demo."
+  default     = 300
+}
+
+variable "sla_check_rate" {
+  type        = string
+  description = "EventBridge schedule expression for how often the SLA check runs (e.g. \"rate(5 minutes)\"). Only fires when sla_alert_enabled = true."
+  default     = "rate(5 minutes)"
+}
+
+variable "sla_realert_minutes" {
+  type        = number
+  description = "Re-alert cooldown: don't email again for the same queue within this many minutes, so a standing breach doesn't notify every scheduled tick. Default 60."
+  default     = 60
+}
+
+variable "sla_context_hours" {
+  type        = number
+  description = "How far back the SLA alert pulls email context (sender/subject/time/case) from the routing log. Wider than the threshold so an email waiting many hours still lists. Default 72h."
+  default     = 72
+}
+
 variable "auto_create_case" {
   type        = bool
   description = "When an email has no Case # and no prior owner, create a new Salesforce Case (Email-to-Case style) and route to its owner."
@@ -121,6 +179,12 @@ variable "log_email_to_salesforce" {
   type        = bool
   description = "Log each inbound email onto its Salesforce Case as an incoming EmailMessage (shows in case history)."
   default     = true
+}
+
+variable "case_status_on_reply" {
+  type        = string
+  description = "On the agent's first reply, advance the Salesforce Case Status to this (from \"New\" only, so it never overrides Working/Escalated/Closed). Empty string disables. Closing stays a manual agent decision."
+  default     = "Working"
 }
 
 variable "link_customer_to_contact" {

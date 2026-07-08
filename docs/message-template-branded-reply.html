@@ -1,0 +1,17 @@
+<!-- Amazon Connect Message Template — "Order Success — Branded Reply" (Email).
+     Paste this into Content Management > Message templates > Create template >
+     Email > Body > Code (HTML). Uses {{Attributes.greeting}} (set by the routing
+     Lambda / inbound flow) so the reply greets the customer by their CRM name.
+     Agent replaces the [response] line with their message; signature + disclaimer stay. -->
+<p>{{Attributes.greeting}}</p>
+<p><br></p>
+<p>[Type your response here]</p>
+<p><br></p>
+<p>Best regards,<br>
+<strong>Order Success Team</strong><br>
+Evolvity &nbsp;&middot;&nbsp; ordersuccess@ccaas.evolvity.com</p>
+<hr>
+<p style="font-size:12px;color:#888888;">
+This email and any attachments are confidential and intended only for the addressee.
+If you received it in error, please delete it and notify us. &copy; Evolvity — Order Success.
+</p>

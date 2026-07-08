@@ -160,6 +160,32 @@ def lookup_case_owner(case_number, contact_id=None, account_id=None):
         return None, None, None
 
 
+def advance_case_status(sf_case_id, to_status, only_if=("New",)):
+    """Move a Case to to_status, but ONLY when its current Status is in only_if — so an
+    agent's first reply flips New -> Working without ever overriding a status an agent
+    already set (Working / Escalated / Closed). Returns the new status if changed, else
+    None. Best-effort — never blocks the reply-logging path.
+
+    Note: replying is not resolving, so this deliberately only advances *into* work, not
+    to Closed. Closing stays a manual agent decision in Salesforce.
+    """
+    if not sf_case_id or not to_status:
+        return None
+    try:
+        token, instance_url = get_token()
+        recs = _query(instance_url, token, f"SELECT Status FROM Case WHERE Id = '{_soql_escape(sf_case_id)}'")
+        if not recs:
+            return None
+        current = recs[0].get("Status")
+        if current == to_status or current not in only_if:
+            return None
+        _update(instance_url, token, "Case", sf_case_id, {"Status": to_status})
+        return to_status
+    except Exception:
+        logger.exception("Could not advance status for case %s", sf_case_id)
+        return None
+
+
 def related_open_cases(contact_id, account_id, exclude_case_id, limit=5):
     """S5 duplicate-work: find OTHER open cases for the same customer (Contact) and/or
     Account, excluding the current case. Returns (count, summary) where summary is e.g.
