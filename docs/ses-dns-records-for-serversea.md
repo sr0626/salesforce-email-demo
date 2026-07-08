@@ -1,5 +1,9 @@
 # SES DNS records for ccaas.evolvity.com — request for Server Sea (Cloudflare zone)
 
+> **Consolidated into [12-dns-serversea-requests.md](12-dns-serversea-requests.md)** —
+> that doc has all four records (incl. SPF + the pending DMARC), validation commands, and
+> live status. This file is kept as the original Phase-A (receiving) request.
+
 Server Sea manages the live Cloudflare zone for evolvity.com and adds records on
 our behalf. Below are the 4 records needed for SES receiving on the subdomain
 `ccaas.evolvity.com`. **All must be added as "DNS only" / NOT proxied (grey
