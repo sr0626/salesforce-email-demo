@@ -33,6 +33,9 @@ dependency on any other project.
 9. [11-runbook.md](11-runbook.md) — **operations runbook**: deploy/redeploy, the
    console-only config checklist, feature toggles & cost levers, day-2 ops,
    validation, troubleshooting, secrets, teardown, and a resource inventory.
+10. [12-dns-serversea-requests.md](12-dns-serversea-requests.md) — every DNS record
+    requested from Server Sea (MX / DKIM / SPF / DMARC) with the exact values,
+    `dig` validation commands, and expected results.
 
 **Scope of this round:** Scenario 1 + Scenario 2 only (from the 8 demo
 scenarios). Scenarios 3/6 need no new build (reuse this round's queue/attribute
