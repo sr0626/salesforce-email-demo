@@ -1,8 +1,14 @@
 """DynamoDB persistence: shared-mailbox ownership + routing audit log."""
 
+from datetime import datetime, timedelta, timezone
+
 from boto3.dynamodb.conditions import Key
 
 from config import OWNERSHIP_TABLE, LOG_TABLE, now_iso
+
+# Marker rows for the SLA re-alert cooldown share the routing-log table under a
+# reserved emailId prefix (no extra table); they are skipped by email listings.
+_SLA_MARKER_PREFIX = "SLA_ALERT#"
 
 
 def upsert_ownership(mailbox, customer_email, owner_id, owner_name, case_number, sf_case_id=None):
@@ -45,20 +51,64 @@ def lookup_routing_by_contact(inbound_contact_id):
 
 def write_audit_log(
     email_id, mailbox, from_addr, subject, case_number,
-    owner_id, owner_name, is_shared, contact_id, outcome,
+    owner_id, owner_name, is_shared, contact_id, outcome, sf_case_id=None,
 ):
-    LOG_TABLE.put_item(
-        Item={
-            "emailId": email_id,
-            "timestamp": now_iso(),
-            "mailbox": mailbox,
-            "fromAddress": from_addr,
-            "subject": subject,
-            "caseId": case_number or "",
-            "resolvedOwnerId": owner_id or "UNASSIGNED",
-            "resolvedOwnerName": owner_name or "Unassigned",
-            "isSharedMailbox": is_shared,
-            "contactId": contact_id,
-            "routingOutcome": outcome,
-        }
+    item = {
+        "emailId": email_id,
+        "timestamp": now_iso(),
+        "mailbox": mailbox,
+        "fromAddress": from_addr,
+        "subject": subject,
+        "caseId": case_number or "",
+        "resolvedOwnerId": owner_id or "UNASSIGNED",
+        "resolvedOwnerName": owner_name or "Unassigned",
+        "isSharedMailbox": is_shared,
+        "contactId": contact_id,
+        "routingOutcome": outcome,
+    }
+    if sf_case_id:
+        # Stored so the SLA alert can deep-link the Case (case number alone can't).
+        item["sfCaseId"] = sf_case_id
+    LOG_TABLE.put_item(Item=item)
+
+
+def recent_inbound_emails(hours=24, limit=8):
+    """SLA alert context: recent INBOUND email rows (subject/sender/time/case) from the
+    routing log, newest first. Excludes outbound-log rows and SLA marker rows. A small
+    Scan — fine for the demo table; add a timestamp GSI if the log ever grows large."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%S")
+    items = LOG_TABLE.scan().get("Items", [])
+    rows = [
+        i for i in items
+        if not str(i.get("emailId", "")).startswith(_SLA_MARKER_PREFIX)
+        and i.get("routingOutcome") != "outbound-logged"
+        and (i.get("timestamp") or "") >= cutoff
+    ]
+    rows.sort(key=lambda i: i.get("timestamp") or "", reverse=True)
+    return rows[:limit]
+
+
+def sla_alert_due(queue_id, cooldown_seconds):
+    """True if this queue hasn't been SLA-alerted within cooldown_seconds (de-dupes the
+    repeat email a standing breach would otherwise send on every scheduled tick)."""
+    resp = LOG_TABLE.query(
+        KeyConditionExpression=Key("emailId").eq(f"{_SLA_MARKER_PREFIX}{queue_id}"),
+        ScanIndexForward=False,
+        Limit=1,
     )
+    items = resp.get("Items", [])
+    if not items:
+        return True
+    try:
+        last = datetime.strptime(items[0]["timestamp"][:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+    except (KeyError, ValueError):
+        return True
+    return (datetime.now(timezone.utc) - last).total_seconds() >= cooldown_seconds
+
+
+def sla_mark_alerted(queue_id):
+    LOG_TABLE.put_item(Item={
+        "emailId": f"{_SLA_MARKER_PREFIX}{queue_id}",
+        "timestamp": now_iso(),
+        "routingOutcome": "sla-alert",
+    })

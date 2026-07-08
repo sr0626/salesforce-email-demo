@@ -90,8 +90,10 @@ module "email_router" {
   owner_flow_map       = module.connect.owner_flow_map
   # Native-email flow mode: auto-derived from the same agents map as owner_flow_map,
   # so adding/removing an agent needs no extra wiring. Fallback = the shared queue.
-  owner_queue_map      = module.connect.owner_queue_map
-  fallback_queue_arn   = module.connect.queue_arn
+  owner_queue_map    = module.connect.owner_queue_map
+  fallback_queue_arn = module.connect.queue_arn
+  # SalesforceOwnerId -> "First Last", so the SLA alert names the agent per owner queue.
+  owner_name_map = { for k, a in var.agents : a.salesforce_owner_id => "${a.first_name} ${a.last_name}" }
 
   # Native-email body fetch (Fix B): console-created EMAIL_MESSAGES bucket. ARN is
   # derived from the name (bucket isn't TF-managed). Prefix set once confirmed.
@@ -104,7 +106,21 @@ module "email_router" {
   case_id_regex            = var.case_id_regex
   auto_create_case         = var.auto_create_case
   log_email_to_salesforce  = var.log_email_to_salesforce
+  case_status_on_reply     = var.case_status_on_reply
   link_customer_to_contact = var.link_customer_to_contact
+
+  # Cost toggle: disable the S4-B outbound-log rule when the instance is idle.
+  outbound_log_enabled = var.outbound_log_enabled
+
+  # Owner-timeout SLA alert. Rule stays DISABLED unless sla_alert_enabled=true
+  # (flip on for the demo). Set sla_alert_email to subscribe a supervisor.
+  sla_alert_enabled     = var.sla_alert_enabled
+  sla_alert_email       = var.sla_alert_email
+  sla_from_address      = var.sla_from_address
+  sla_threshold_seconds = var.sla_threshold_seconds
+  sla_check_rate        = var.sla_check_rate
+  sla_realert_minutes   = var.sla_realert_minutes
+  sla_context_hours     = var.sla_context_hours
 }
 
 # Associate the router Lambda with the Connect instance so contact flows may

@@ -30,6 +30,9 @@ dependency on any other project.
    (shared mailbox ownership continuity) actually work.
 8. [08-implementation-status.md](08-implementation-status.md) — scenario-by-scenario
    status, open gaps, and bonus features.
+9. [11-runbook.md](11-runbook.md) — **operations runbook**: deploy/redeploy, the
+   console-only config checklist, feature toggles & cost levers, day-2 ops,
+   validation, troubleshooting, secrets, teardown, and a resource inventory.
 
 **Scope of this round:** Scenario 1 + Scenario 2 only (from the 8 demo
 scenarios). Scenarios 3/6 need no new build (reuse this round's queue/attribute
