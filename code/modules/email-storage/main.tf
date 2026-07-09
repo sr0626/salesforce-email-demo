@@ -83,6 +83,54 @@ resource "aws_dynamodb_table" "mailbox_ownership" {
 }
 
 ########################################
+# DynamoDB — RoutingRules (S6: admin-maintainable CRM routing rules)
+# Admin console CRUDs these; the router evaluates active rules by priority to
+# override the owner queue when a Case field matches.
+########################################
+
+resource "aws_dynamodb_table" "routing_rules" {
+  name         = "${var.instance_alias}-routing-rules"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "ruleId"
+
+  attribute {
+    name = "ruleId"
+    type = "S"
+  }
+
+  dynamic "server_side_encryption" {
+    for_each = local.use_cmk ? [1] : []
+    content {
+      enabled     = true
+      kms_key_arn = var.kms_key_arn
+    }
+  }
+}
+
+########################################
+# DynamoDB — EmailTemplates (S7: admin-maintainable reply templates)
+########################################
+
+resource "aws_dynamodb_table" "email_templates" {
+  name         = "${var.instance_alias}-email-templates"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "templateId"
+
+  attribute {
+    name = "templateId"
+    type = "S"
+  }
+
+  dynamic "server_side_encryption" {
+    for_each = local.use_cmk ? [1] : []
+    content {
+      enabled     = true
+      kms_key_arn = var.kms_key_arn
+    }
+  }
+}
+
+########################################
 # DynamoDB — EmailRoutingLog (append-only audit trail)
 ########################################
 

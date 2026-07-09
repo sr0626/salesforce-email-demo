@@ -92,6 +92,17 @@ variable "agents" {
   default = {}
 }
 
+variable "specialists" {
+  description = "Specialist/team agents reachable ONLY via S6 routing rules — no Salesforce OwnerId, so they never get owner-routed or fallback work. Each gets a dedicated queue + routing profile + Connect login; the rule 'Route to' dropdown lists them by name. Map key = logical id used as the rule target (e.g. \"returns\")."
+  type = map(object({
+    username   = string
+    password   = string
+    first_name = string
+    last_name  = string
+  }))
+  default = {}
+}
+
 # --- Supervisor user (final-exercise steps 10 & 11: reporting / review) ---
 
 variable "supervisor_username" {

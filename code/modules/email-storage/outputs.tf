@@ -21,3 +21,19 @@ output "routing_log_table_name" {
 output "routing_log_table_arn" {
   value = aws_dynamodb_table.email_routing_log.arn
 }
+
+output "routing_rules_table_name" {
+  value = aws_dynamodb_table.routing_rules.name
+}
+
+output "routing_rules_table_arn" {
+  value = aws_dynamodb_table.routing_rules.arn
+}
+
+output "email_templates_table_name" {
+  value = aws_dynamodb_table.email_templates.name
+}
+
+output "email_templates_table_arn" {
+  value = aws_dynamodb_table.email_templates.arn
+}

@@ -20,7 +20,7 @@ exercise. Update as features land. Legend:
 | 3 | Hybrid routing (ACD + agent self-selection) | ✅ Built — ACD push (owner queues) + native Worklist cherry-pick (`Email-Case-Queue`) running together; governance via security permission. Duplicate-work *alerts* (S5) is the only remaining sub-item |
 | 4 | Outbound email tracking & visibility | ✅ Built — native reporting (incoming/outgoing metrics + contact search) **and** outbound content logged to the SF Case as Outgoing `EmailMessage` (EventBridge → Lambda) for supervisor review |
 | 5 | Customer/account-level visibility | ✅ Built — customer + account 360 (screen-pop + SF case) **and** proactive duplicate-work `⚠️` alerts (other open cases + owners) on accept |
-| 6 | Complex routing using CRM data | 🟡 Partial — routing engine built (by Case Owner); extends to any CRM field via same Lambda ♻️ |
+| 6 | Complex routing using CRM data | ✅ Built — route by Case Owner **and** by any Case field (Type/Priority/Origin/…) via **admin-maintainable rules** in a no-code **web console**; router evaluates rules live, no deploy |
 | 7 | Agent productivity & collaboration | 🟡 Partial — collaboration/consult + multi-session built; templates arrive with outbound; knowledge/drafts not yet |
 | 8 | AI & future-state | 🔜 Future-state roadmap via Amazon Q in Connect (docs/09) |
 
@@ -139,11 +139,28 @@ also gets a **Detail-view screen-pop** on accept with a clickable Salesforce Cas
 | Requirement | Status | Note |
 |---|---|---|
 | Route by Salesforce Case Owner | ✅ | Core routing (live SOQL → owner's agent) |
-| Route by Account Ownership | 🟡 | Account is linked; routing by account owner reuses the same Lambda pattern — not built |
-| Route by Customer Info / Product / Order / Case Type / Business Rules | 🔜 | The routing Lambda can query any Salesforce field and branch; currently keys on Case Owner — extend via the same pattern |
-| *Success:* multiple variables simultaneously | 🟡 | Lambda supports it; currently owner-based |
-| *Success:* admin-maintainable routing | 🟡 | Today via code/tfvars; a DynamoDB "routing rules" table would make it admin-editable |
-| *Success:* minimal custom development | 🟡 | Engine + mapping in place; per-rule config is the delta |
+| Route by Customer Info / Product / Order / **Case Type** / Business Rules | ✅ | **Built 2026-07-08** — the router reads Case fields (`Type`, `Priority`, `Origin`, `Reason`, `Status`) and evaluates **admin-maintained rules** (`rules.py` + `routing-rules` DynamoDB table). First active rule (by priority) whose field matches → routes to that rule's owner queue, overriding Case-owner routing; sets a `routingRule` attribute for the screen-pop. Extend fields via `RULE_CASE_FIELDS`. |
+| Route by Account Ownership | 🟡 | Account is linked; add `Account.*` fields to the rule set the same way — not wired yet |
+| *Success:* multiple variables simultaneously | ✅ | Multiple rules, priority-ordered; `op: in` matches a value list. Owner routing is the fallback. |
+| *Success:* **admin-maintainable routing** | ✅ | **No-code web console** (Lambda Function URL, token login) — admin adds/edits/toggles rules in a browser; router picks them up live, **no deploy**. See the admin-console section below. |
+| *Success:* minimal custom development | ✅ | Adding a rule = a form in the console; supporting a new Case field = one env var (`RULE_CASE_FIELDS`). |
+
+**Admin console (S6 + S7, built 2026-07-08).** A `modules/admin-console` Lambda behind a
+**Function URL** serves a single-page app + JSON API to manage **routing rules** and **email
+templates**, both in DynamoDB (`…-routing-rules`, `…-email-templates`). Token-gated (bearer
+token in every `/api/*` call; auto-generated → `terraform output -raw admin_console_token`).
+The router **reads the same rules table** to override routing on a CRM match. **Demo:** admin
+opens the console, adds `Case.Type = Return → Sateesh`, emails a Return-type case → it routes
+to Sateesh regardless of Case owner; toggle the rule off → routes normally. **Specialist
+teams (2026-07-08):** agents can be **rules-only specialists** — a `specialists` map (no
+Salesforce OwnerId) creates a queue + routing profile + Connect login that is **never
+owner-routed or in the fallback**, so the *only* way to reach them is a matched rule. They
+show in the rule "Route to" dropdown by name (e.g. **Returns Team**, **Billing Team**) and
+are watched by the SLA alert. The audit log records the actual `routedQueue` so the SLA
+alert attributes a waiting email to the specialist queue, not the Case owner. **Templates tab:**
+full CRUD + live preview now; **native agent insertion** (Connect `/#` quick response) is the
+one piece gated on Amazon Q in Connect (the KB "UnknownError") — a "Publish to agents" action
+lands when that KB is enabled. Prod auth upgrade: swap Function URL `NONE` → `AWS_IAM`/Cognito.
 
 ♻️ Reuses this round's routing Lambda + owner→queue mapping.
 

@@ -87,6 +87,18 @@ variable "owner_name_map" {
   default     = {}
 }
 
+variable "specialist_queue_map" {
+  type        = map(string)
+  description = "S6 specialists: map of specialist key -> queue ARN. A routing rule may target a specialist by key; also watched by the SLA alert. Not owner-routed / not fallback."
+  default     = {}
+}
+
+variable "specialist_name_map" {
+  type        = map(string)
+  description = "Map of specialist key -> display name, for the SLA alert's owner/agent column."
+  default     = {}
+}
+
 variable "connect_email_bucket_name" {
   type        = string
   description = "Flow mode (Fix B): the S3 bucket where Connect stores native-email message bodies (EMAIL_MESSAGES storage). Empty disables body fetch (logs subject+metadata only)."
@@ -185,6 +197,18 @@ variable "case_status_on_reply" {
   type        = string
   description = "On the agent's first reply, advance the Salesforce Case Status to this (from \"New\" only, so it never overrides Working/Escalated/Closed). Empty string disables. Closing stays a manual agent decision."
   default     = "Working"
+}
+
+variable "routing_rules_table_name" {
+  type        = string
+  description = "S6: DynamoDB routing-rules table the router reads to override the owner queue when a Case field matches. Empty disables rule evaluation."
+  default     = ""
+}
+
+variable "routing_rules_table_arn" {
+  type        = string
+  description = "ARN of routing_rules_table_name, used to grant the router read access. Empty omits the statement."
+  default     = ""
 }
 
 variable "link_customer_to_contact" {

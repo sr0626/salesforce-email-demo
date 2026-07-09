@@ -51,7 +51,7 @@ def lookup_routing_by_contact(inbound_contact_id):
 
 def write_audit_log(
     email_id, mailbox, from_addr, subject, case_number,
-    owner_id, owner_name, is_shared, contact_id, outcome, sf_case_id=None,
+    owner_id, owner_name, is_shared, contact_id, outcome, sf_case_id=None, routed_queue=None,
 ):
     item = {
         "emailId": email_id,
@@ -69,6 +69,10 @@ def write_audit_log(
     if sf_case_id:
         # Stored so the SLA alert can deep-link the Case (case number alone can't).
         item["sfCaseId"] = sf_case_id
+    if routed_queue:
+        # The queue id the email actually landed in (rule override incl. specialists), so
+        # the SLA alert attributes a waiting email to the right queue, not just the owner.
+        item["routedQueue"] = routed_queue
     LOG_TABLE.put_item(Item=item)
 
 

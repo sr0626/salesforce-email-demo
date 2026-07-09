@@ -71,6 +71,16 @@ locals {
     },
   ] : []
 
+  # S6 routing rules: read (Scan) the admin-maintained rules table. Only when wired.
+  rules_statements = var.routing_rules_table_arn != "" ? [
+    {
+      Sid      = "ReadRoutingRules"
+      Effect   = "Allow"
+      Action   = ["dynamodb:Scan", "dynamodb:GetItem"]
+      Resource = var.routing_rules_table_arn
+    },
+  ] : []
+
   # Flow mode (native email): read the message body Connect stored in its
   # EMAIL_MESSAGES bucket (Fix B). Only added when the bucket is configured.
   connect_email_statements = var.connect_email_bucket_arn != "" ? [
@@ -112,7 +122,7 @@ resource "aws_iam_role_policy" "access" {
   role = aws_iam_role.lambda.id
   policy = jsonencode({
     Version   = "2012-10-17"
-    Statement = concat(local.base_statements, local.kms_statements, local.connect_email_statements, local.ses_statements)
+    Statement = concat(local.base_statements, local.kms_statements, local.connect_email_statements, local.ses_statements, local.rules_statements)
   })
 }
 
@@ -142,6 +152,8 @@ resource "aws_lambda_function" "router" {
       OWNER_FLOW_MAP        = jsonencode(var.owner_flow_map)
       OWNER_QUEUE_MAP       = jsonencode(var.owner_queue_map)
       OWNER_NAME_MAP        = jsonencode(var.owner_name_map)
+      SPECIALIST_QUEUE_MAP  = jsonencode(var.specialist_queue_map)
+      SPECIALIST_NAME_MAP   = jsonencode(var.specialist_name_map)
       FALLBACK_QUEUE_ARN    = var.fallback_queue_arn
       CONNECT_EMAIL_BUCKET  = var.connect_email_bucket_name
       CONNECT_EMAIL_PREFIX  = var.connect_email_prefix
@@ -150,6 +162,7 @@ resource "aws_lambda_function" "router" {
       AUTO_CREATE_CASE      = var.auto_create_case ? "true" : "false"
       LOG_EMAIL_TO_SF       = var.log_email_to_salesforce ? "true" : "false"
       CASE_STATUS_ON_REPLY  = var.case_status_on_reply
+      ROUTING_RULES_TABLE   = var.routing_rules_table_name
       LINK_CONTACT          = var.link_customer_to_contact ? "true" : "false"
       FLOW_DEBUG            = var.flow_debug ? "true" : "false"
       SLA_FROM_ADDRESS      = var.sla_from_address

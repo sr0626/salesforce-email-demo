@@ -83,6 +83,13 @@ variable "case_status_on_reply" {
   default     = "Working"
 }
 
+variable "admin_console_token" {
+  type        = string
+  description = "Bearer token for the S6/S7 admin console. Empty auto-generates one (see `terraform output admin_console_token`). Set to pin a known value."
+  default     = ""
+  sensitive   = true
+}
+
 ########################################
 # EventBridge / cost toggles
 ########################################
@@ -295,6 +302,17 @@ variable "agents" {
     first_name          = string
     last_name           = string
     salesforce_owner_id = string
+  }))
+  default = {}
+}
+
+variable "specialists" {
+  description = "Specialist/team agents reachable ONLY via S6 routing rules (no Salesforce OwnerId → never owner-routed / never fallback). Map key = the rule target id (e.g. \"returns\"). Each gets a queue + routing profile + Connect login and appears in the console's Route-to dropdown."
+  type = map(object({
+    username   = string
+    password   = string
+    first_name = string
+    last_name  = string
   }))
   default = {}
 }

@@ -33,13 +33,15 @@ import connect_email
 import connect_flow
 import connect_task
 import email_view
+import rules
 import salesforce
 import storage
 from config import (
     logger, CASE_RE, SHARED_MAILBOXES, AUTO_CREATE_CASE, LOG_EMAIL_TO_SF, LINK_CONTACT,
     FLOW_DEBUG, connect, ses, CONNECT_INSTANCE_ID, OWNER_QUEUE_MAP, OWNER_NAME_MAP,
-    FALLBACK_QUEUE_ARN, SLA_FROM_ADDRESS, SLA_ALERT_EMAILS, SLA_THRESHOLD_SECONDS,
-    SLA_REALERT_SECONDS, SLA_CONTEXT_HOURS, CONNECT_ACCESS_URL, CASE_STATUS_ON_REPLY,
+    SPECIALIST_QUEUE_MAP, SPECIALIST_NAME_MAP, FALLBACK_QUEUE_ARN, SLA_FROM_ADDRESS,
+    SLA_ALERT_EMAILS, SLA_THRESHOLD_SECONDS, SLA_REALERT_SECONDS, SLA_CONTEXT_HOURS,
+    CONNECT_ACCESS_URL, CASE_STATUS_ON_REPLY, RULES_TABLE, RULE_CASE_FIELDS,
 )
 
 # Single routing-log marker key for the GLOBAL SLA re-alert cooldown (one consolidated
@@ -219,10 +221,26 @@ def _handle_flow(event):
             d["sf_case_id"], subject, from_addr, mailbox, text_body, html_body, d["contact_id"],
         )
 
+    # S6 admin routing rules: if a Case field matches an active rule, override the owner
+    # queue with the rule's target queue (an owner OR a rules-only specialist). Evaluated
+    # only when rules are configured, and before the audit write so the row records the
+    # queue the email actually landed in.
+    rule_queue, rule_desc = "", ""
+    if RULES_TABLE is not None and d["sf_case_id"]:
+        case_fields = salesforce.get_case_fields(d["sf_case_id"], RULE_CASE_FIELDS)
+        rq, rd = rules.evaluate(case_fields)
+        if rq:
+            rule_queue, rule_desc = rq, rd
+
+    # Final routed queue = rule override, else owner queue, else shared fallback. Recorded
+    # so the SLA alert can attribute a waiting email to the right queue (incl. specialists).
+    routed_arn = rule_queue or OWNER_QUEUE_MAP.get(d["owner_id"] or "", FALLBACK_QUEUE_ARN)
+    routed_qid = routed_arn.rsplit("/queue/", 1)[-1] if "/queue/" in routed_arn else ""
+
     storage.write_audit_log(
         connect_contact_id or "email-flow", mailbox, from_addr, subject, d["case_number"],
         d["owner_id"], d["owner_name"], is_shared, connect_contact_id, d["outcome"],
-        sf_case_id=d["sf_case_id"],
+        sf_case_id=d["sf_case_id"], routed_queue=routed_qid,
     )
 
     # S5 duplicate-work alert: any OTHER open cases for this customer/account?
@@ -242,7 +260,8 @@ def _handle_flow(event):
     greeting = f"Hi {customer_name}," if customer_name else "Hi,"
 
     resp = connect_flow.build_response(
-        d, mailbox, from_addr, is_shared, case_url, dup_count, dup_warning, customer_name, greeting
+        d, mailbox, from_addr, is_shared, case_url, dup_count, dup_warning, customer_name, greeting,
+        rule_queue_arn=rule_queue, rule_desc=rule_desc,
     )
     logger.info(
         "flow-routed contactId=%s case=%s owner=%s outcome=%s queue=%s dup=%s",
@@ -337,9 +356,10 @@ def _handle_sla_check(event):
     if not SLA_FROM_ADDRESS or not SLA_ALERT_EMAILS:
         return {"status": "no-recipient"}
 
-    # Watch every owner queue plus the shared fallback. GetCurrentMetricData filters
-    # on the queue *id* (the UUID after /queue/), not the full ARN.
-    arns = set(OWNER_QUEUE_MAP.values()) | ({FALLBACK_QUEUE_ARN} if FALLBACK_QUEUE_ARN else set())
+    # Watch every owner queue, every specialist queue, plus the shared fallback.
+    # GetCurrentMetricData filters on the queue *id* (the UUID after /queue/), not the ARN.
+    arns = (set(OWNER_QUEUE_MAP.values()) | set(SPECIALIST_QUEUE_MAP.values())
+            | ({FALLBACK_QUEUE_ARN} if FALLBACK_QUEUE_ARN else set()))
     queue_ids = sorted({a.rsplit("/queue/", 1)[-1] for a in arns if "/queue/" in a})
     if not queue_ids:
         return {"status": "no-queues"}
@@ -387,27 +407,41 @@ def _handle_sla_check(event):
         except Exception:
             return f"queue {qid}"
 
-    # The metric gives a per-queue count + oldest age but NOT the individual contacts,
-    # so attribute the context emails to queues via the routing log: map each queue back
-    # to its owner and show that owner's most-recent emails under it (fallback queue =
-    # owners with no dedicated queue). Capped at the waiting count so the list reconciles.
+    # The metric gives a per-queue count + oldest age but NOT the individual contacts, so
+    # attribute the context emails via the routing log. Prefer the exact `routedQueue`
+    # recorded on each row (handles rule-routed specialist emails, whose owner ≠ queue);
+    # fall back to the owner→queue mapping for older rows. Capped at the waiting count.
     qid_to_owner = {
         arn.rsplit("/queue/", 1)[-1]: oid
         for oid, arn in OWNER_QUEUE_MAP.items() if "/queue/" in arn
+    }
+    qid_to_spec = {
+        arn.rsplit("/queue/", 1)[-1]: key
+        for key, arn in SPECIALIST_QUEUE_MAP.items() if "/queue/" in arn
     }
     owned_ids = set(qid_to_owner.values())
     fallback_qid = FALLBACK_QUEUE_ARN.rsplit("/queue/", 1)[-1] if "/queue/" in FALLBACK_QUEUE_ARN else None
     recent = storage.recent_inbound_emails(SLA_CONTEXT_HOURS, limit=50)
 
     def emails_for_queue(qid, n):
+        exact = [r for r in recent if (r.get("routedQueue") or "") == qid]
+        if exact:
+            return exact[:n]
         owner = qid_to_owner.get(qid)
         if owner:
-            rows = [r for r in recent if r.get("resolvedOwnerId") == owner]
+            rows = [r for r in recent if r.get("resolvedOwnerId") == owner and not r.get("routedQueue")]
         elif qid == fallback_qid:
-            rows = [r for r in recent if r.get("resolvedOwnerId") not in owned_ids]
+            rows = [r for r in recent if r.get("resolvedOwnerId") not in owned_ids and not r.get("routedQueue")]
         else:
             rows = []
         return rows[:n]
+
+    def agent_label(qid):
+        if qid in qid_to_owner:
+            return OWNER_NAME_MAP.get(qid_to_owner[qid], "—")
+        if qid in qid_to_spec:
+            return SPECIALIST_NAME_MAP.get(qid_to_spec[qid], "—")
+        return "Shared / unassigned" if qid == fallback_qid else "—"
 
     # Normalize each breaching queue into a render-agnostic dict so the text + HTML
     # bodies stay in sync. The list is a routing-log proxy for the metric count; when
@@ -427,10 +461,8 @@ def _handle_sla_check(event):
                 "case_no": r.get("caseId") or "",
                 "link": salesforce.case_url(r.get("sfCaseId")) if r.get("sfCaseId") else None,
             })
-        owner = qid_to_owner.get(qid)
-        agent = OWNER_NAME_MAP.get(owner, "—") if owner else "Shared / unassigned"
         queues.append({
-            "name": queue_name(qid), "agent": agent, "count": count,
+            "name": queue_name(qid), "agent": agent_label(qid), "count": count,
             "age": _fmt_dur(age), "emails": emails,
             "extra": max(count - len(rows), 0),
         })
