@@ -27,6 +27,7 @@ see [08-implementation-status](08-implementation-status.md).
 | CRM | **Salesforce** Dev org; secret in **Secrets Manager** (Client Credentials OAuth) | TF seeds placeholder; **value set post-apply** ([06](06-setup-salesforce-dev-org.md)) |
 | Eventing | **EventBridge** rules: `…-outbound-email-completed` (S4-B), `…-sla-check` (owner-timeout) | Terraform |
 | Alerts | **SES HTML email** — owner-timeout alert from `sla_from_address` (verified domain) → `sla_alert_email` | Terraform (IAM `ses:SendEmail`) |
+| Admin console | **Lambda + Function URL** serving a no-code SPA + JSON API for **routing rules** + **email templates** (DynamoDB `…-routing-rules`, `…-email-templates`); token-gated | Terraform (`modules/admin-console`) |
 | Encryption | Customer-managed **KMS** key (S3/DynamoDB/Secrets/Lambda env) | pre-existing key, referenced |
 
 Region **us-west-2**, account **044336301301**, instance alias **salesforce-email-demo**.
@@ -132,6 +133,31 @@ starts with `{{Attributes.greeting}}` for name personalization (the routing Lamb
 `greeting`, the inbound flow maps `greeting = $.External.greeting`). Branded email template:
 [message-template-branded-reply.html](message-template-branded-reply.html) (blocked on the
 Q KB issue for now — §4.7).
+
+### Admin console — routing rules & templates (S6/S7)
+A no-code web console (Lambda Function URL) to manage **CRM routing rules** and **email
+templates**; the router reads the rules table live (no deploy to change routing).
+
+- **Open it:** `terraform output admin_console_url`, then sign in with
+  `terraform output -raw admin_console_token` (auto-generated; pin via `admin_console_token`).
+- **Add a routing rule:** *New rule* → pick a Case field (`Type`/`Priority`/`Origin`/…),
+  operator (`equals` / `is one of`), value, and the **owner** to route to; set priority + Active.
+  The router evaluates active rules by priority on each inbound email; **first match** overrides
+  the Case-owner queue (routes to that owner's queue), else normal routing. The screen-pop shows
+  which rule fired (`routingRule`). Add Case fields to match on via `RULE_CASE_FIELDS` (Lambda env).
+- **Templates:** create/edit/preview (`{{greeting}}` personalizes). Native agent insertion
+  (Connect `/#`) is gated on the Amazon Q in Connect KB — a *Publish to agents* action lands
+  when that's enabled; today templates drive the branded reply / serve as the managed library.
+- **Specialist teams (rules-only):** add entries to the `specialists` map in tfvars (no
+  Salesforce OwnerId) — each gets a queue + routing profile + Connect login and appears in the
+  rule "Route to" dropdown (e.g. **Returns Team**, **Billing Team**). They are **never**
+  owner-routed or in the fallback, so a rule is the only way to reach them. Per new specialist
+  queue, do the console-only **Outbound email config** if they'll send replies (§4.2). They're
+  SLA-watched like any queue.
+- **Demo:** add `Type = Return → Returns Team`, email a Return case → routes to the Returns Team
+  (nobody owns it); toggle the rule Off → routes to the Case owner normally.
+- **Prod auth:** the Function URL is `authorization_type = NONE` with an in-app bearer token
+  (fine for a gated demo). Swap to `AWS_IAM` (SigV4) or front with Cognito for production.
 
 ### Owner-timeout SLA alert (gap #5)
 When an email sits unhandled in an owner's queue past the threshold, a supervisor is

@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/aws"
       version = ">= 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = ">= 3.0"
+    }
   }
 }
 
@@ -40,7 +44,8 @@ module "connect" {
   agent_last_name             = var.agent_last_name
   agent_security_profile_name = var.agent_security_profile_name
 
-  agents = var.agents
+  agents      = var.agents
+  specialists = var.specialists
 
   supervisor_username              = var.supervisor_username
   supervisor_password              = var.supervisor_password
@@ -94,6 +99,9 @@ module "email_router" {
   fallback_queue_arn = module.connect.queue_arn
   # SalesforceOwnerId -> "First Last", so the SLA alert names the agent per owner queue.
   owner_name_map = { for k, a in var.agents : a.salesforce_owner_id => "${a.first_name} ${a.last_name}" }
+  # S6 specialists (rules-only): rule targets + SLA-watched queues, keyed by specialist id.
+  specialist_queue_map = module.connect.specialist_queue_map
+  specialist_name_map  = module.connect.specialist_name_map
 
   # Native-email body fetch (Fix B): console-created EMAIL_MESSAGES bucket. ARN is
   # derived from the name (bucket isn't TF-managed). Prefix set once confirmed.
@@ -109,6 +117,10 @@ module "email_router" {
   case_status_on_reply     = var.case_status_on_reply
   link_customer_to_contact = var.link_customer_to_contact
 
+  # S6: read admin-maintained routing rules to override the owner queue on a CRM match.
+  routing_rules_table_name = module.email_storage.routing_rules_table_name
+  routing_rules_table_arn  = module.email_storage.routing_rules_table_arn
+
   # Cost toggle: disable the S4-B outbound-log rule when the instance is idle.
   outbound_log_enabled = var.outbound_log_enabled
 
@@ -121,6 +133,28 @@ module "email_router" {
   sla_check_rate        = var.sla_check_rate
   sla_realert_minutes   = var.sla_realert_minutes
   sla_context_hours     = var.sla_context_hours
+}
+
+# S6/S7 admin console — a Lambda Function URL serving a single-page app + JSON API to
+# manage routing rules and email templates (both in DynamoDB). Token-gated; the router
+# reads the same rules table to override routing on a CRM match.
+module "admin_console" {
+  source = "./modules/admin-console"
+
+  lambda_function_name = "${var.lambda_function_name}-admin-console"
+  kms_key_arn          = var.kms_key_arn
+
+  routing_rules_table_name   = module.email_storage.routing_rules_table_name
+  routing_rules_table_arn    = module.email_storage.routing_rules_table_arn
+  email_templates_table_name = module.email_storage.email_templates_table_name
+  email_templates_table_arn  = module.email_storage.email_templates_table_arn
+
+  # Rule-target dropdown: owner-agents (by SF OwnerId) + specialists (by key).
+  owner_name_map = merge(
+    { for k, a in var.agents : a.salesforce_owner_id => "${a.first_name} ${a.last_name}" },
+    module.connect.specialist_name_map,
+  )
+  admin_token = var.admin_console_token
 }
 
 # Associate the router Lambda with the Connect instance so contact flows may

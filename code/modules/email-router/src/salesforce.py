@@ -160,6 +160,21 @@ def lookup_case_owner(case_number, contact_id=None, account_id=None):
         return None, None, None
 
 
+def get_case_fields(sf_case_id, field_names):
+    """S6: read a small set of Case fields (Type, Priority, Origin, …) so the routing
+    rules engine can match on them. Returns a {field: value} dict. Best-effort."""
+    if not sf_case_id or not field_names:
+        return {}
+    try:
+        token, instance_url = get_token()
+        cols = ", ".join(field_names)
+        recs = _query(instance_url, token, f"SELECT {cols} FROM Case WHERE Id = '{_soql_escape(sf_case_id)}'")
+        return {k: v for k, v in (recs[0].items() if recs else {}.items()) if k != "attributes"}
+    except Exception:
+        logger.exception("Could not read case fields for %s", sf_case_id)
+        return {}
+
+
 def advance_case_status(sf_case_id, to_status, only_if=("New",)):
     """Move a Case to to_status, but ONLY when its current Status is in only_if — so an
     agent's first reply flips New -> Working without ever overriding a status an agent

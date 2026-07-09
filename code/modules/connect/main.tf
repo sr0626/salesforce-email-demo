@@ -117,7 +117,7 @@ resource "aws_connect_user" "agent" {
 # targets that owner's queue, served only by that owner's agent.
 
 data "aws_connect_security_profile" "owner_agent" {
-  count       = length(var.agents) > 0 ? 1 : 0
+  count       = length(var.agents) > 0 || length(var.specialists) > 0 ? 1 : 0
   instance_id = aws_connect_instance.this.id
   name        = var.agent_security_profile_name
 }
@@ -218,6 +218,56 @@ resource "aws_connect_user" "owner" {
     auto_accept = false
   }
 
+  identity_info {
+    first_name = each.value.first_name
+    last_name  = each.value.last_name
+  }
+}
+
+# ---- Specialists (S6): queue + routing profile + user reachable ONLY via routing
+# rules. No owner contact flow and NOT in owner_queue_map/fallback, so the sole path
+# to a specialist is a matched rule that Sets working queue to their queue.
+resource "aws_connect_queue" "specialist" {
+  for_each              = var.specialists
+  instance_id           = aws_connect_instance.this.id
+  name                  = "${each.value.first_name} ${each.value.last_name}"
+  description           = "Specialist queue for ${each.key} — reachable only via S6 routing rules"
+  hours_of_operation_id = aws_connect_hours_of_operation.always_open.hours_of_operation_id
+  max_contacts          = var.queue_max_contacts
+}
+
+resource "aws_connect_routing_profile" "specialist" {
+  for_each                  = var.specialists
+  instance_id               = aws_connect_instance.this.id
+  name                      = "${each.value.first_name} ${each.value.last_name} Profile"
+  description               = "Specialist routing profile for ${each.key}"
+  default_outbound_queue_id = aws_connect_queue.specialist[each.key].queue_id
+
+  media_concurrencies {
+    channel     = "EMAIL"
+    concurrency = var.email_concurrency
+  }
+  queue_configs {
+    channel  = "EMAIL"
+    delay    = 0
+    priority = 1
+    queue_id = aws_connect_queue.specialist[each.key].queue_id
+  }
+}
+
+resource "aws_connect_user" "specialist" {
+  for_each = var.specialists
+
+  instance_id          = aws_connect_instance.this.id
+  name                 = each.value.username
+  password             = each.value.password
+  routing_profile_id   = aws_connect_routing_profile.specialist[each.key].routing_profile_id
+  security_profile_ids = [data.aws_connect_security_profile.owner_agent[0].security_profile_id]
+
+  phone_config {
+    phone_type  = "SOFT_PHONE"
+    auto_accept = false
+  }
   identity_info {
     first_name = each.value.first_name
     last_name  = each.value.last_name

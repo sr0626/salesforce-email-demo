@@ -38,6 +38,17 @@ output "email_router_lambda_arn" {
   value       = module.email_router.lambda_arn
 }
 
+output "admin_console_url" {
+  description = "Admin console URL (routing rules + email templates). Open in a browser, sign in with the token."
+  value       = module.admin_console.console_url
+}
+
+output "admin_console_token" {
+  description = "Bearer token for the admin console login. Run: terraform output -raw admin_console_token"
+  value       = module.admin_console.console_token
+  sensitive   = true
+}
+
 # SES is manual (doc 05); the DKIM CNAMEs come from the SES console, not
 # Terraform. The only fixed piece worth surfacing as a reminder is the MX value.
 output "ses_mx_reminder" {

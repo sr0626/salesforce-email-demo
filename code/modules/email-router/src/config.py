@@ -26,6 +26,11 @@ s3 = boto3.client("s3", config=Config(signature_version="s3v4"))
 # --- DynamoDB tables ---
 OWNERSHIP_TABLE = ddb.Table(os.environ["OWNERSHIP_TABLE"])
 LOG_TABLE = ddb.Table(os.environ["ROUTING_LOG_TABLE"])
+# S6: admin-maintainable routing rules (optional — table only wired when set).
+_rules_table_name = os.environ.get("ROUTING_RULES_TABLE", "")
+RULES_TABLE = ddb.Table(_rules_table_name) if _rules_table_name else None
+# Salesforce Case fields the rules engine may match on (fetched per inbound email).
+RULE_CASE_FIELDS = [f.strip() for f in os.environ.get("RULE_CASE_FIELDS", "Type,Priority,Origin,Reason,Status").split(",") if f.strip()]
 
 # --- routing / parsing ---
 CASE_RE = re.compile(os.environ["CASE_ID_REGEX"], re.IGNORECASE)
@@ -39,6 +44,13 @@ OWNER_FLOW_MAP = json.loads(os.environ.get("OWNER_FLOW_MAP", "{}"))
 OWNER_QUEUE_MAP = json.loads(os.environ.get("OWNER_QUEUE_MAP", "{}"))
 # ownerId -> "First Last", so the SLA alert can name the agent behind each owner queue.
 OWNER_NAME_MAP = json.loads(os.environ.get("OWNER_NAME_MAP", "{}"))
+# S6 specialists: reachable ONLY via routing rules (not owner-routed / not fallback).
+# key -> queue ARN, and key -> display name. Keys are the rule targets.
+SPECIALIST_QUEUE_MAP = json.loads(os.environ.get("SPECIALIST_QUEUE_MAP", "{}"))
+SPECIALIST_NAME_MAP = json.loads(os.environ.get("SPECIALIST_NAME_MAP", "{}"))
+# A routing rule's target may be an owner (SF OwnerId) or a specialist (key); this map
+# resolves either to a queue ARN.
+ROUTE_TARGET_MAP = {**OWNER_QUEUE_MAP, **SPECIALIST_QUEUE_MAP}
 FALLBACK_QUEUE_ARN = os.environ.get("FALLBACK_QUEUE_ARN", "")
 CONNECT_INSTANCE_ID = os.environ["CONNECT_INSTANCE_ID"]
 TASK_FLOW_ARN = os.environ["TASK_FLOW_ARN"]

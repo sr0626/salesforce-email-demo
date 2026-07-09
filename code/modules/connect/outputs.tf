@@ -41,6 +41,16 @@ output "owner_queue_map" {
   value       = { for k, a in var.agents : a.salesforce_owner_id => aws_connect_queue.owner[k].arn }
 }
 
+output "specialist_queue_map" {
+  description = "Map of specialist key -> that specialist's queue ARN (S6 rules route here by key). Not in owner_queue_map, so only rules reach them."
+  value       = { for k, s in var.specialists : k => aws_connect_queue.specialist[k].arn }
+}
+
+output "specialist_name_map" {
+  description = "Map of specialist key -> display name, for the rule 'Route to' dropdown and the SLA alert."
+  value       = { for k, s in var.specialists : k => "${s.first_name} ${s.last_name}" }
+}
+
 output "quick_connect_ids" {
   description = "Transfer quick-connect IDs by agent key — associate these to queues in the console to enable agent-to-agent transfer (collaboration)."
   value       = { for k, qc in aws_connect_quick_connect.owner : k => qc.quick_connect_id }
