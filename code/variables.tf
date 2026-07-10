@@ -90,6 +90,12 @@ variable "admin_console_token" {
   sensitive   = true
 }
 
+variable "qr_knowledge_base_id" {
+  type        = string
+  description = "Amazon Q in Connect QUICK_RESPONSES knowledge base id for this instance (aws connect list-integration-associations → WISDOM_QUICK_RESPONSES). Enables the templates 'Publish to Q' button. Empty leaves publishing disabled."
+  default     = ""
+}
+
 ########################################
 # EventBridge / cost toggles
 ########################################

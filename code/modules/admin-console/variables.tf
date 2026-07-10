@@ -31,3 +31,15 @@ variable "admin_token" {
   default     = ""
   sensitive   = true
 }
+
+variable "qr_knowledge_base_id" {
+  type        = string
+  description = "Amazon Q in Connect QUICK_RESPONSES knowledge base id bound to the instance (from list-integration-associations WISDOM_QUICK_RESPONSES). Enables the templates 'Publish to Q' button. Empty leaves publishing disabled."
+  default     = ""
+}
+
+variable "qr_knowledge_base_arn" {
+  type        = string
+  description = "ARN of qr_knowledge_base_id, for the wisdom/qconnect IAM grant. Empty omits the statement."
+  default     = ""
+}
