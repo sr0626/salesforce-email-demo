@@ -145,9 +145,12 @@ templates**; the router reads the rules table live (no deploy to change routing)
   The router evaluates active rules by priority on each inbound email; **first match** overrides
   the Case-owner queue (routes to that owner's queue), else normal routing. The screen-pop shows
   which rule fired (`routingRule`). Add Case fields to match on via `RULE_CASE_FIELDS` (Lambda env).
-- **Templates:** create/edit/preview (`{{greeting}}` personalizes). Native agent insertion
-  (Connect `/#`) is gated on the Amazon Q in Connect KB — a *Publish to agents* action lands
-  when that's enabled; today templates drive the branded reply / serve as the managed library.
+- **Templates:** create/edit/preview (`{{greeting}}` personalizes), and **Publish to Q** — the
+  per-row button pushes a template into the instance's `QUICK_RESPONSES` KB (`qr_knowledge_base_id`,
+  from `aws connect list-integration-associations` → `WISDOM_QUICK_RESPONSES`) via the `qconnect`
+  API, so **edit → Publish → agents see it in `/#`**. Updates by name if the quick response exists,
+  else creates; converts `{{greeting}}` → `{{Attributes.greeting}}`. Needs `qr_knowledge_base_id`
+  set (else the button returns "not configured"). IAM grants `wisdom:/qconnect: *QuickResponse*`.
 - **Specialist teams (rules-only):** add entries to the `specialists` map in tfvars (no
   Salesforce OwnerId) — each gets a queue + routing profile + Connect login and appears in the
   rule "Route to" dropdown (e.g. **Returns Team**, **Billing Team**). They are **never**

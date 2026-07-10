@@ -21,7 +21,7 @@ exercise. Update as features land. Legend:
 | 4 | Outbound email tracking & visibility | ✅ Built — native reporting (incoming/outgoing metrics + contact search) **and** outbound content logged to the SF Case as Outgoing `EmailMessage` (EventBridge → Lambda) for supervisor review |
 | 5 | Customer/account-level visibility | ✅ Built — customer + account 360 (screen-pop + SF case) **and** proactive duplicate-work `⚠️` alerts (other open cases + owners) on accept |
 | 6 | Complex routing using CRM data | ✅ Built — route by Case Owner **and** by any Case field (Type/Priority/Origin/…) via **admin-maintainable rules** in a no-code **web console**; router evaluates rules live, no deploy |
-| 7 | Agent productivity & collaboration | 🟡 Partial — collaboration/consult + multi-session built; templates arrive with outbound; knowledge/drafts not yet |
+| 7 | Agent productivity & collaboration | 🟡 Partial — collaboration/consult + multi-session ✅; **email templates/macros ✅ fully** (admin-console-managed + Publish-to-Q into agents' `/#`, verified 2026-07-10). Remaining: knowledge search, shared drafts, address book, tighter unified desktop — all **S8 / Amazon Q assistant** territory |
 | 8 | AI & future-state | 🔜 Future-state roadmap via Amazon Q in Connect (docs/09) |
 
 ---
@@ -158,9 +158,13 @@ owner-routed or in the fallback**, so the *only* way to reach them is a matched 
 show in the rule "Route to" dropdown by name (e.g. **Returns Team**, **Billing Team**) and
 are watched by the SLA alert. The audit log records the actual `routedQueue` so the SLA
 alert attributes a waiting email to the specialist queue, not the Case owner. **Templates tab:**
-full CRUD + live preview now; **native agent insertion** (Connect `/#` quick response) is the
-one piece gated on Amazon Q in Connect (the KB "UnknownError") — a "Publish to agents" action
-lands when that KB is enabled. Prod auth upgrade: swap Function URL `NONE` → `AWS_IAM`/Cognito.
+full CRUD + live preview, **and Publish-to-Q** (2026-07-09): each template's **Publish to Q**
+button pushes it into the instance's **`QUICK_RESPONSES` knowledge base** (`f2f5f1e8`, found via
+`list-integration-associations` → `WISDOM_QUICK_RESPONSES`) via the `qconnect` API — searches by
+name → **updates** the existing quick response or **creates** one, converting `{{greeting}}` →
+`{{Attributes.greeting}}`. So **edit in the console → Publish → agents see it live in `/#`**. (The
+earlier "UnknownError" was a *different* KB — a NEW message-templates/assistant KB for our
+instance; the quick-responses KB already existed and was already associated.) Prod auth upgrade: swap Function URL `NONE` → `AWS_IAM`/Cognito.
 
 ♻️ Reuses this round's routing Lambda + owner→queue mapping.
 
@@ -169,14 +173,14 @@ lands when that KB is enabled. Prod auth upgrade: swap Function URL `NONE` → `
 | Requirement | Status | Note |
 |---|---|---|
 | Unified agent desktop | 🟡 | Connect agent workspace + a **Detail-view screen-pop** surfacing the SF Case link/owner on accept; tighter full-SF unification via the CTI adapter is an enhancement |
-| Email templates and macros | ✅ | **Built 2026-07-07** — 4 email **Quick responses** (Content Management → Quick responses); agent inserts via **`/#`** + search or shortcut (e.g. `/#os`) in the reply editor. Provisioned by bulk CSV import (`docs/email-quick-responses.csv`, `*ALL*` routing profiles, Active). **Console-only** (no `aws_qconnect_*`/wisdom resource in the provider). Authoring needs **Content Management** permission. **Gotcha:** after bulk import, responses need a short **index** (or a re-save) before agents see them — re-login not required. Message templates (signature/branding) available in the same menu. **Personalized** — responses greet by name via `{{Attributes.greeting}}` (routing Lambda sets `greeting` = "Hi <SF Contact FirstName>," → email display name → "Hi,"); the inbound flow maps `greeting = $.External.greeting`. |
+| Email templates and macros | ✅ | **Built 2026-07-07; admin-managed 2026-07-10.** Agents insert email **quick responses** via **`/#`** + shortcut (e.g. `/#os`). Now **maintained in the no-code admin console** (Templates tab, CRUD + live preview), and each template's **Publish to Q** button pushes it into the instance's `QUICK_RESPONSES` KB (`qconnect` API) so **edit → Publish → agents see it live in `/#`** (verified 2026-07-10). Three-state indicator (Publish to Q / Publish update / Published ✓ + "unpublished edits" flag). **Personalized** — `{{greeting}}` (console) → `{{Attributes.greeting}}` (Connect), greeting set by the routing Lambda. **Gotchas (documented):** quick responses must be `contentType=…format=markdown` (plain vanishes from `/#`); an update triggers a short re-index; `qconnect` uses the `wisdom:` IAM namespace + a separate `quick-response/*` resource. |
 | Address book integration | 🔜 | Not built |
 | Knowledge search | 🔜 | Amazon Q / knowledge base — not built (S8-adjacent) |
 | Multi-session handling | ✅ | Agents handle multiple concurrent contacts (TASK + EMAIL concurrency) |
 | Internal collaboration | ✅ | Quick connects — transfer/consult a colleague; **verified on the native email channel** (final-exercise step 8) |
 | Shared drafts | 🔜 | Not built |
 | Expert consultation workflows | 🟡 | Transfer/consult via quick connect ✅; a formal consult workflow is more |
-| *Success:* reduced effort / faster / consistency | 🟡 | Collaboration + multi-session now; templates with outbound |
+| *Success:* reduced effort / faster / consistency | 🟡 | Collaboration + multi-session + **admin-managed templates published live to agents' `/#`**; knowledge/AI assist (S8) would extend it further |
 
 ## Scenario 8 — AI and Future-State Capabilities
 

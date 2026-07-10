@@ -155,6 +155,12 @@ module "admin_console" {
     module.connect.specialist_name_map,
   )
   admin_token = var.admin_console_token
+
+  # Templates "Publish to Q" → the instance's QUICK_RESPONSES knowledge base.
+  qr_knowledge_base_id = var.qr_knowledge_base_id
+  qr_knowledge_base_arn = var.qr_knowledge_base_id != "" ? (
+    "arn:aws:wisdom:${var.region}:${data.aws_caller_identity.current.account_id}:knowledge-base/${var.qr_knowledge_base_id}"
+  ) : ""
 }
 
 # Associate the router Lambda with the Connect instance so contact flows may

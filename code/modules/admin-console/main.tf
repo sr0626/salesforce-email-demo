@@ -59,6 +59,26 @@ resource "aws_iam_role_policy" "access" {
         Effect   = "Allow"
         Action   = ["kms:Decrypt", "kms:GenerateDataKey", "kms:DescribeKey"]
         Resource = var.kms_key_arn
+      }] : [],
+      var.qr_knowledge_base_arn != "" ? [{
+        # Publish templates as quick responses into the instance's QUICK_RESPONSES KB.
+        # Amazon Q in Connect still uses the wisdom: IAM namespace (some accounts also
+        # expose qconnect:) — grant both to be safe. Covers the KB + its quick-responses.
+        Sid    = "PublishQuickResponses"
+        Effect = "Allow"
+        Action = [
+          "wisdom:CreateQuickResponse", "wisdom:UpdateQuickResponse",
+          "wisdom:SearchQuickResponses", "wisdom:GetQuickResponse",
+          "qconnect:CreateQuickResponse", "qconnect:UpdateQuickResponse",
+          "qconnect:SearchQuickResponses", "qconnect:GetQuickResponse",
+        ]
+        # Create/Search act on the KB; Get/Update act on the quick-response sub-resource,
+        # which is a SEPARATE ARN path (…:quick-response/<kb>/*, not knowledge-base/<kb>/*).
+        Resource = [
+          var.qr_knowledge_base_arn,
+          "${var.qr_knowledge_base_arn}/*",
+          "${replace(var.qr_knowledge_base_arn, ":knowledge-base/", ":quick-response/")}/*",
+        ]
     }] : [])
   })
 }
@@ -80,6 +100,7 @@ resource "aws_lambda_function" "admin" {
       EMAIL_TEMPLATES_TABLE = var.email_templates_table_name
       ADMIN_TOKEN           = local.token
       OWNER_NAME_MAP        = jsonencode(var.owner_name_map)
+      QR_KNOWLEDGE_BASE_ID  = var.qr_knowledge_base_id
     }
   }
 }
